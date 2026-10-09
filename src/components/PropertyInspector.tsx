@@ -16,6 +16,7 @@ import {
 } from '../types';
 import { DOMAIN_FIELDS } from '../domainFields';
 import { useMappingDictionary } from '../context/MappingDictionaryContext';
+import { isPriceRelatedElement, sanitizeNonPriceElement } from '../utils/pricingEngine';
 import {
   AVAILABLE_FONTS,
   FONT_WEIGHTS,
@@ -1410,8 +1411,8 @@ export const PropertyInspector: React.FC<PropertyInspectorProps> = ({
               </div>
             </div>
 
-            {/* ATTACHED CURRENCY / PRICE INDEPENDENT TYPOGRAPHY */}
-            {selectedItem.type === 'text' && (
+            {/* ATTACHED CURRENCY / PRICE INDEPENDENT TYPOGRAPHY (PRICE-RELATED ELEMENTS ONLY) */}
+            {selectedItem.type === 'text' && isPriceRelatedElement(selectedItem) && (
               <div className="pt-3 border-t border-dashed border-slate-300 space-y-2.5 bg-slate-50/60 p-2.5 rounded-md">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-1.5">
@@ -1421,19 +1422,27 @@ export const PropertyInspector: React.FC<PropertyInspectorProps> = ({
                 <label className="flex items-center gap-1 text-[11px] text-slate-600 cursor-pointer font-medium">
                   <input
                     type="checkbox"
-                    checked={Boolean(
-                      selectedItem.is_price ||
-                      selectedItem.currency_symbol ||
-                      selectedItem.binding_key === 'SELLING_PRICE' ||
-                      selectedItem.binding_key === 'PROMOPRICE' ||
-                      (selectedItem.binding_key && selectedItem.binding_key.toLowerCase().includes('price'))
-                    )}
+                    checked={Boolean(selectedItem.is_price || selectedItem.currency_symbol)}
                     onChange={(e) => {
                       const checked = e.target.checked;
-                      update({
-                        is_price: checked,
-                        currency_symbol: checked ? (selectedItem.currency_symbol || 'FCFA') : undefined,
-                      });
+                      if (!checked) {
+                        update({
+                          is_price: false,
+                          currency_symbol: undefined,
+                          currency_position: undefined,
+                          currency_font_family: undefined,
+                          currency_font_size_pt: undefined,
+                          currency_font_weight: undefined,
+                          currency_font_style: undefined,
+                          currency_color: undefined,
+                          currency_spacing_pt: undefined,
+                        });
+                      } else {
+                        update({
+                          is_price: true,
+                          currency_symbol: selectedItem.currency_symbol || 'FCFA',
+                        });
+                      }
                     }}
                     className="rounded text-emerald-600 focus:ring-emerald-500"
                   />
@@ -1441,7 +1450,7 @@ export const PropertyInspector: React.FC<PropertyInspectorProps> = ({
                 </label>
               </div>
 
-              {(selectedItem.is_price || selectedItem.currency_symbol || selectedItem.binding_key?.toLowerCase().includes('price')) && (
+              {(selectedItem.is_price || selectedItem.currency_symbol) && (
                 <div className="space-y-2.5 pt-1">
                   <div className="grid grid-cols-2 gap-2">
                     <div>

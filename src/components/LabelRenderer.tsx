@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { LabelTemplate, ProductRecord, TemplateItem, RotationHandleType } from '../types';
 import { TierEngine } from '../utils/tierEngine';
-import { PricingEngine } from '../utils/pricingEngine';
+import { PricingEngine, isPriceRelatedElement } from '../utils/pricingEngine';
 import { generateCode128Bars, generateEAN13Bars, getBarcodeSvgPath } from '../utils/barcodeGenerator';
 import { generateQrMatrix, getQrSvgPath } from '../utils/qrGenerator';
 import { SmartGuideLine } from '../utils/smartGuides';
@@ -114,13 +114,8 @@ export const LabelRenderer: React.FC<LabelRendererProps> = ({
       case 'text': {
         let displayVal = PricingEngine.resolveCalculatedText(item, record);
 
-        // Check if item is price or bound to a price domain field
-        const isPriceField =
-          item.is_price ||
-          item.binding_key === 'SELLING_PRICE' ||
-          item.binding_key === 'PROMOPRICE' ||
-          (item.binding_key && item.binding_key.toLowerCase().includes('price')) ||
-          (item.binding_key && item.binding_key.toLowerCase().includes('prix'));
+        // Check if item is price or bound to a price domain field (ONLY price-related elements can get price/currency attributes)
+        const isPriceField = isPriceRelatedElement(item);
 
         // Alignments
         const textAlignClass =
@@ -173,8 +168,8 @@ export const LabelRenderer: React.FC<LabelRendererProps> = ({
           textShadowStyle = `${(s.offset_x_px || 1) * zoom}px ${(s.offset_y_px || 1) * zoom}px ${(s.blur_px || 2) * zoom}px ${s.color || '#000000'}`;
         }
 
-        // Currency separate styling
-        const hasCurrency = (isPriceField || item.currency_symbol) && item.currency_symbol;
+        // Currency separate styling (only valid for price-related elements)
+        const hasCurrency = isPriceField && Boolean(item.currency_symbol);
         const currencySym = item.currency_symbol || 'FCFA';
         const currFontSizePx = item.currency_font_size_pt
           ? Math.max(5, item.currency_font_size_pt * 1.333 * zoom)

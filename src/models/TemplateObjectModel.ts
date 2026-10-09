@@ -329,15 +329,19 @@ export function extractCommonProperties(items: TemplateItem[]): CommonProperties
       border_color: it.border_color,
       border_width: it.border_width,
       corner_radius: it.corner_radius,
-      is_price: it.is_price,
-      currency_symbol: it.currency_symbol,
-      currency_position: it.currency_position,
-      currency_font_family: it.currency_font_family,
-      currency_font_size_pt: it.currency_font_size_pt,
-      currency_font_weight: it.currency_font_weight,
-      currency_font_style: it.currency_font_style,
-      currency_color: it.currency_color,
-      currency_spacing_pt: it.currency_spacing_pt,
+      ...(isPriceRelatedElement(items[0])
+        ? {
+            is_price: it.is_price,
+            currency_symbol: it.currency_symbol,
+            currency_position: it.currency_position,
+            currency_font_family: it.currency_font_family,
+            currency_font_size_pt: it.currency_font_size_pt,
+            currency_font_weight: it.currency_font_weight,
+            currency_font_style: it.currency_font_style,
+            currency_color: it.currency_color,
+            currency_spacing_pt: it.currency_spacing_pt,
+          }
+        : {}),
       bar_color: it.bar_color,
       barcode_type: it.barcode_type,
       show_text: it.show_text,
@@ -391,7 +395,24 @@ export function extractCommonProperties(items: TemplateItem[]): CommonProperties
     'warn_on_overlap',
   ];
 
+  const priceKeys: (keyof CommonProperties)[] = [
+    'is_price',
+    'currency_symbol',
+    'currency_position',
+    'currency_font_family',
+    'currency_font_size_pt',
+    'currency_font_weight',
+    'currency_font_style',
+    'currency_color',
+    'currency_spacing_pt',
+  ];
+
+  const allArePriceRelated = items.every((it) => isPriceRelatedElement(it));
+
   for (const key of keys) {
+    if (priceKeys.includes(key) && !allArePriceRelated) {
+      continue;
+    }
     const allHaveIt = items.every((it: any) => it[key] !== undefined);
     if (allHaveIt) {
       const allEqual = items.every((it: any) => it[key] === first[key]);
@@ -537,15 +558,18 @@ export function applyElementStyle(target: TemplateItem, style: ElementStylePaylo
     if (style.border_width !== undefined) result.border_width = style.border_width;
     if (style.corner_radius !== undefined) result.corner_radius = style.corner_radius;
 
-    if (style.is_price !== undefined) result.is_price = style.is_price;
-    if (style.currency_symbol !== undefined) result.currency_symbol = style.currency_symbol;
-    if (style.currency_position !== undefined) result.currency_position = style.currency_position;
-    if (style.currency_font_family !== undefined) result.currency_font_family = style.currency_font_family;
-    if (style.currency_font_size_pt !== undefined) result.currency_font_size_pt = style.currency_font_size_pt;
-    if (style.currency_font_weight !== undefined) result.currency_font_weight = style.currency_font_weight;
-    if (style.currency_font_style !== undefined) result.currency_font_style = style.currency_font_style;
-    if (style.currency_color !== undefined) result.currency_color = style.currency_color;
-    if (style.currency_spacing_pt !== undefined) result.currency_spacing_pt = style.currency_spacing_pt;
+    // Price & currency styling is ONLY applied to price-related elements
+    if (isPriceRelatedElement(target)) {
+      if (style.is_price !== undefined) result.is_price = style.is_price;
+      if (style.currency_symbol !== undefined) result.currency_symbol = style.currency_symbol;
+      if (style.currency_position !== undefined) result.currency_position = style.currency_position;
+      if (style.currency_font_family !== undefined) result.currency_font_family = style.currency_font_family;
+      if (style.currency_font_size_pt !== undefined) result.currency_font_size_pt = style.currency_font_size_pt;
+      if (style.currency_font_weight !== undefined) result.currency_font_weight = style.currency_font_weight;
+      if (style.currency_font_style !== undefined) result.currency_font_style = style.currency_font_style;
+      if (style.currency_color !== undefined) result.currency_color = style.currency_color;
+      if (style.currency_spacing_pt !== undefined) result.currency_spacing_pt = style.currency_spacing_pt;
+    }
   } else if (target.type === 'shape' || target.type === 'ellipse') {
     if (style.fill_color !== undefined) result.fill_color = style.fill_color;
     if (style.border_color !== undefined) result.border_color = style.border_color;
@@ -571,6 +595,10 @@ export function applyElementStyle(target: TemplateItem, style: ElementStylePaylo
     if (style.zone_color !== undefined) result.zone_color = style.zone_color;
     if (style.pattern !== undefined) result.pattern = style.pattern;
     if (style.opacity !== undefined) result.opacity = style.opacity;
+  }
+
+  if (!isPriceRelatedElement(result)) {
+    return sanitizeNonPriceElement(result) as TemplateItem;
   }
 
   return result as TemplateItem;

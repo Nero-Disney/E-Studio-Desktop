@@ -8,9 +8,15 @@
     "start": "vite preview --host 0.0.0.0 --port 3000",
     "build": "vite build",
     "lint": "tsc --noEmit",
-    "preview": "vite preview --host 0.0.0.0 --port 3000"
+    "preview": "vite preview --host 0.0.0.0 --port 3000",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build"
   },
   "dependencies": {
+    "@tauri-apps/api": "^2.12.2",
+    "@tauri-apps/plugin-dialog": "^2.8.1",
+    "@tauri-apps/plugin-fs": "^2.6.0",
     "@types/qrcode": "^1.5.6",
     "clsx": "^2.1.1",
     "jspdf": "^2.5.2",
@@ -25,6 +31,7 @@
   "devDependencies": {
     "@nanonets/graft": "^0.20.0",
     "@tailwindcss/vite": "^4.0.9",
+    "@tauri-apps/cli": "^2.12.1",
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
     "@vitejs/plugin-react": "^4.3.4",

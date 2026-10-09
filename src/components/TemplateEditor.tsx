@@ -17,6 +17,7 @@ import {
   extractElementStyle,
   applyElementStyle,
 } from '../models/TemplateObjectModel';
+import { sanitizeNonPriceElement } from '../utils/pricingEngine';
 import {
   SmartGuideLine,
   BoxBounds,
@@ -98,7 +99,10 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({
   onOpenGeneration,
   onOpenRulesModal,
 }) => {
-  const [template, setTemplate] = useState<LabelTemplate>(initialTemplate);
+  const [template, setTemplate] = useState<LabelTemplate>(() => ({
+    ...initialTemplate,
+    items: initialTemplate.items.map((it) => sanitizeNonPriceElement(it)),
+  }));
   // Multi-selection state
   const [selectedItemIds, setSelectedItemIds] = useState<string[]>(
     template.items.length > 0 ? [template.items[0].id] : []
@@ -355,7 +359,8 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({
   };
 
   const handleUpdateItem = (updated: TemplateItem) => {
-    const rawItems = template.items.map((it) => (it.id === updated.id ? updated : it));
+    const sanitized = sanitizeNonPriceElement(updated);
+    const rawItems = template.items.map((it) => (it.id === sanitized.id ? sanitized : it));
     const next = {
       ...template,
       items: applySemanticSnapping(rawItems),
@@ -364,7 +369,7 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({
   };
 
   const handleUpdateMultipleItems = (updatedItems: TemplateItem[]) => {
-    const updateMap = new Map(updatedItems.map((u) => [u.id, u]));
+    const updateMap = new Map(updatedItems.map((u) => [u.id, sanitizeNonPriceElement(u)]));
     const rawItems = template.items.map((it) => (updateMap.has(it.id) ? updateMap.get(it.id)! : it));
     const next = {
       ...template,

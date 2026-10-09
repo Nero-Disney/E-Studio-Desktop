@@ -18,6 +18,7 @@ import { LabelTemplate, ProductRecord } from '../types';
 import { catalogRepository } from '../services/catalogRepository';
 import { navigationService, AppView } from '../services/navigationService';
 import { AuditLogService } from '../services/auditLogService';
+import { sanitizeNonPriceElement } from '../utils/pricingEngine';
 
 const TEMPLATES_STORAGE_KEY = 'estudio_desktop_templates_v3';
 
@@ -29,7 +30,12 @@ function MainWorkspace() {
       const saved = localStorage.getItem(TEMPLATES_STORAGE_KEY);
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) return parsed;
+        if (Array.isArray(parsed)) {
+          return parsed.map((tpl: LabelTemplate) => ({
+            ...tpl,
+            items: (tpl.items || []).map((it) => sanitizeNonPriceElement(it)),
+          }));
+        }
       }
     } catch (e) {
       console.warn('Failed to load local templates workspace', e);
@@ -105,21 +111,25 @@ function MainWorkspace() {
   };
 
   const handleSaveTemplate = (updated: LabelTemplate) => {
-    const existingIndex = templates.findIndex((t) => t.name === updated.name);
+    const sanitized: LabelTemplate = {
+      ...updated,
+      items: (updated.items || []).map((it) => sanitizeNonPriceElement(it)),
+    };
+    const existingIndex = templates.findIndex((t) => t.name === sanitized.name);
     let nextTemplates: LabelTemplate[];
     if (existingIndex >= 0) {
       nextTemplates = [...templates];
-      nextTemplates[existingIndex] = updated;
+      nextTemplates[existingIndex] = sanitized;
     } else {
-      nextTemplates = [updated, ...templates];
+      nextTemplates = [sanitized, ...templates];
     }
     saveTemplates(nextTemplates);
-    setActiveTemplate(updated);
+    setActiveTemplate(sanitized);
     AuditLogService.append({
       user: 'Opérateur Local',
       action: 'MODIFICATION_GABARIT',
-      template_name: updated.name,
-      details: `Gabarit sauvegardé : ${updated.name} (${updated.items.length} éléments)`,
+      template_name: sanitized.name,
+      details: `Gabarit sauvegardé : ${sanitized.name} (${sanitized.items.length} éléments)`,
     });
   };
 
@@ -128,6 +138,7 @@ function MainWorkspace() {
     const duplicated: LabelTemplate = {
       ...JSON.parse(JSON.stringify(template)),
       name: copyName,
+      items: (template.items || []).map((it) => sanitizeNonPriceElement(it)),
     };
     const nextTemplates = [duplicated, ...templates];
     saveTemplates(nextTemplates);
@@ -155,23 +166,31 @@ function MainWorkspace() {
   };
 
   const handleImportTemplate = (imported: LabelTemplate) => {
-    const nextTemplates = [imported, ...templates.filter((t) => t.name !== imported.name)];
+    const sanitized: LabelTemplate = {
+      ...imported,
+      items: (imported.items || []).map((it) => sanitizeNonPriceElement(it)),
+    };
+    const nextTemplates = [sanitized, ...templates.filter((t) => t.name !== sanitized.name)];
     saveTemplates(nextTemplates);
-    setActiveTemplate(imported);
+    setActiveTemplate(sanitized);
     AuditLogService.append({
       user: 'Opérateur Local',
       action: 'IMPORT_GABARIT',
-      template_name: imported.name,
-      details: `Gabarit importé : ${imported.name}`,
+      template_name: sanitized.name,
+      details: `Gabarit importé : ${sanitized.name}`,
     });
   };
 
   const handleCreateNewTemplate = (newTemplate: LabelTemplate) => {
-    const nextTemplates = [newTemplate, ...templates];
+    const sanitized: LabelTemplate = {
+      ...newTemplate,
+      items: (newTemplate.items || []).map((it) => sanitizeNonPriceElement(it)),
+    };
+    const nextTemplates = [sanitized, ...templates];
     saveTemplates(nextTemplates);
-    setActiveTemplate(newTemplate);
+    setActiveTemplate(sanitized);
     setIsNewWizardOpen(false);
-    navigationService.navigateTo('editor', { template: newTemplate.name });
+    navigationService.navigateTo('editor', { template: sanitized.name });
     AuditLogService.append({
       user: 'Opérateur Local',
       action: 'CREATION_GABARIT',
