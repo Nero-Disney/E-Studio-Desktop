@@ -1070,7 +1070,13 @@ export const GenerationWorkspace: React.FC<GenerationWorkspaceProps> = ({
             </div>
 
             <div className="flex-1 overflow-y-auto divide-y divide-slate-100">
-              {filteredProducts.map((p, idx) => {
+              {filteredProducts.length === 0 ? (
+                <div className="p-6 text-center text-xs text-slate-400">
+                  <p className="font-semibold text-slate-600 mb-1">Aucun article dans la file</p>
+                  <p>Importez un fichier Excel/CSV ou liez des données depuis le catalogue pour générer des planches.</p>
+                </div>
+              ) : (
+                filteredProducts.map((p, idx) => {
                 const diag = diagnostics.find((d) => d.id === p.id);
                 const isSelected = idx === currentIndex;
                 const isChecked = checkedProductIds.has(p.id);
@@ -1125,7 +1131,7 @@ export const GenerationWorkspace: React.FC<GenerationWorkspaceProps> = ({
                     </div>
                   </div>
                 );
-              })}
+              }))}
             </div>
           </div>
 
@@ -1203,7 +1209,10 @@ export const GenerationWorkspace: React.FC<GenerationWorkspaceProps> = ({
                   />
                 </div>
               ) : (
-                <p className="text-slate-400 text-sm">Aucun article sélectionné</p>
+                <div className="text-center p-8 bg-white border border-slate-200 rounded-2xl shadow-sm max-w-sm">
+                  <p className="font-bold text-slate-800 text-sm mb-1">Aperçu en attente de données</p>
+                  <p className="text-slate-500 text-xs">Chargez un catalogue ou ajoutez des articles pour prévisualiser ce gabarit avec des données réelles.</p>
+                </div>
               )}
             </div>
           </div>

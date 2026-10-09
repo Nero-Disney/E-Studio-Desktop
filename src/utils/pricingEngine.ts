@@ -447,4 +447,88 @@ export class PricingEngine {
 
     return 1.0;
   }
+
+  /**
+   * Checks whether an element is price-related.
+   * Only price_block, tier_price, and text elements bound to price keys are price-related.
+   */
+  static isPriceRelated(item: TemplateItem | undefined | null): boolean {
+    return isPriceRelatedElement(item);
+  }
+
+  /**
+   * Completely strips price and currency attributes from non-price elements.
+   */
+  static sanitizeNonPriceElement<T extends TemplateItem>(item: T): T {
+    return sanitizeNonPriceElement(item);
+  }
+}
+
+/**
+ * Checks whether an element is price-related.
+ * An element is price-related IF AND ONLY IF:
+ * - Its type is 'price_block' or 'tier_price'
+ * - Or its type is 'text' AND its binding_key is explicitly tied to a price/currency field
+ */
+export function isPriceRelatedElement(item: TemplateItem | undefined | null): boolean {
+  if (!item) return false;
+  if (item.type === 'price_block' || item.type === 'tier_price') return true;
+  if (item.type === 'text') {
+    if (!item.binding_key) return false;
+    const bk = item.binding_key.trim().toUpperCase().replace(/[\s\.\-]+/g, '_');
+    return (
+      bk === 'SELLING_PRICE' ||
+      bk === 'PROMOPRICE' ||
+      bk === 'PROMO_PRICE' ||
+      bk === 'LAST_SELLING_PRICE' ||
+      bk === 'DISCPRICE' ||
+      bk === 'UNIT_PRICE_BASE' ||
+      bk === 'UNIT_PRICE_MEASURE' ||
+      bk === 'UNIT_PRICE_TEXT' ||
+      bk === 'ECO_TAX' ||
+      bk === 'PRIX' ||
+      bk === 'PRIX_VENTE' ||
+      bk === 'PRIX_PROMO' ||
+      bk === 'PRIX_STD' ||
+      bk.includes('PRICE') ||
+      bk.includes('PRIX') ||
+      bk.includes('TARIF')
+    );
+  }
+  return false;
+}
+
+/**
+ * Completely strips all price and currency attributes from an element if it is not price-related.
+ */
+export function sanitizeNonPriceElement<T extends TemplateItem>(item: T): T {
+  if (!item || isPriceRelatedElement(item)) {
+    return item;
+  }
+  const clean: any = { ...item };
+  delete clean.is_price;
+  delete clean.currency_symbol;
+  delete clean.currency_position;
+  delete clean.currency_font_family;
+  delete clean.currency_font_size_pt;
+  delete clean.currency_font_weight;
+  delete clean.currency_font_style;
+  delete clean.currency_color;
+  delete clean.currency_spacing_pt;
+  delete clean.currency_scale;
+  delete clean.currency_offset_y;
+  delete clean.currency_style;
+  delete clean.integer_style;
+  delete clean.decimal_style;
+  delete clean.cents_fraction_scale;
+  delete clean.cents_offset_y;
+  delete clean.cents_style;
+  delete clean.decimal_separator;
+  delete clean.thousand_separator;
+  delete clean.unit_price_config;
+  delete clean.secondary_currency_config;
+  if (clean.calculation_mode === 'unit_price' || clean.calculation_mode === 'secondary_currency') {
+    delete clean.calculation_mode;
+  }
+  return clean as T;
 }

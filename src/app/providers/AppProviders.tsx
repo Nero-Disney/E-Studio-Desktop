@@ -1,17 +1,18 @@
 import React, { createContext, useContext, useMemo, useState } from 'react';
 import { ProductRecord } from '../../domains/catalog/ProductRecord';
-import { SyncJob } from '../../domains/sync/syncContracts';
 import { LabelTemplate } from '../../domains/templates/Template';
-import { createAppStoreSnapshot } from '../store/appStore';
+import { createAppStoreSnapshot, SyncJobSummary } from '../store/appStore';
+
+export type { SyncJobSummary };
 
 interface AppStoreContextValue {
   templates: LabelTemplate[];
   products: ProductRecord[];
-  syncJobs: SyncJob[];
+  syncJobs: SyncJobSummary[];
   updateTemplate: (template: LabelTemplate) => void;
   addTemplate: (template: LabelTemplate) => void;
   setProducts: (products: ProductRecord[]) => void;
-  setSyncJobs: (jobs: SyncJob[]) => void;
+  setSyncJobs: (jobs: SyncJobSummary[]) => void;
 }
 
 const AppStoreContext = createContext<AppStoreContextValue | undefined>(undefined);
@@ -21,7 +22,7 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
 
   const [templates, setTemplates] = useState<LabelTemplate[]>(initial.templates);
   const [products, setProducts] = useState<ProductRecord[]>(initial.products);
-  const [syncJobs, setSyncJobs] = useState<SyncJob[]>(initial.syncJobs);
+  const [syncJobs, setSyncJobs] = useState<SyncJobSummary[]>(initial.syncJobs);
 
   const value = useMemo<AppStoreContextValue>(
     () => ({

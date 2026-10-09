@@ -1,24 +1,17 @@
 import React from 'react';
 import { AppView } from '../services/navigationService';
 import { LabelTemplate } from '../types';
-import { PWAInstallButton } from '../pwa/components/PWAInstallButton';
-import { useOnlineStatus } from '../pwa/hooks/useOnlineStatus';
 import {
   LayoutDashboard,
   Layers,
   Printer,
-  Database,
-  Smartphone,
   ChevronRight,
-  Wifi,
-  WifiOff,
-  Cloud,
   Settings2,
   BookOpen,
   Type,
   History,
-  HelpCircle,
-  HardDrive,
+  FileSpreadsheet,
+  Keyboard,
 } from 'lucide-react';
 
 interface AppTopNavigationBarProps {
@@ -26,16 +19,13 @@ interface AppTopNavigationBarProps {
   activeTemplate: LabelTemplate | null;
   templates: LabelTemplate[];
   totalProductsCount: number;
-  pendingLotsCount: number;
-  isTursoConfigured?: boolean;
   onNavigate: (view: AppView) => void;
-  onOpenMobileSync: () => void;
-  onOpenMasterDatabase: () => void;
   onOpenRulesModal: () => void;
   onOpenFontManager: () => void;
   onOpenAuditLogs: () => void;
   onOpenMappingDictionary: () => void;
   onOpenPreferences: () => void;
+  onOpenShortcuts: () => void;
 }
 
 export const AppTopNavigationBar: React.FC<AppTopNavigationBarProps> = ({
@@ -43,21 +33,17 @@ export const AppTopNavigationBar: React.FC<AppTopNavigationBarProps> = ({
   activeTemplate,
   templates,
   totalProductsCount,
-  pendingLotsCount,
-  isTursoConfigured = false,
   onNavigate,
-  onOpenMobileSync,
-  onOpenMasterDatabase,
   onOpenRulesModal,
   onOpenFontManager,
   onOpenAuditLogs,
   onOpenMappingDictionary,
   onOpenPreferences,
+  onOpenShortcuts,
 }) => {
-  const isOnline = useOnlineStatus();
   const [toolsDropdownOpen, setToolsDropdownOpen] = React.useState(false);
 
-  // Global hotkeys Alt+1 .. Alt+5
+  // Global hotkeys Alt+1 .. Alt+4
   React.useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.altKey && !e.ctrlKey && !e.metaKey) {
@@ -72,10 +58,7 @@ export const AppTopNavigationBar: React.FC<AppTopNavigationBarProps> = ({
           onNavigate('generation');
         } else if (e.key === '4') {
           e.preventDefault();
-          onNavigate('database');
-        } else if (e.key === '5') {
-          e.preventDefault();
-          onNavigate('mobile');
+          onNavigate('catalog');
         }
       }
     };
@@ -84,7 +67,7 @@ export const AppTopNavigationBar: React.FC<AppTopNavigationBarProps> = ({
   }, [onNavigate]);
 
   return (
-    <nav className="bg-slate-900 text-white border-b border-slate-800 shrink-0 select-none z-40 relative shadow-md">
+    <nav className="bg-slate-950 text-white border-b border-slate-800 shrink-0 select-none z-40 relative shadow-md">
       <div className="h-12 px-3 sm:px-4 flex items-center justify-between gap-3">
         {/* Left Side: Brand Logo & Breadcrumb Navigation */}
         <div className="flex items-center gap-3 min-w-0">
@@ -100,7 +83,7 @@ export const AppTopNavigationBar: React.FC<AppTopNavigationBarProps> = ({
               <div className="flex items-center gap-1.5 leading-none">
                 <span className="font-extrabold text-sm tracking-tight text-white">E-STUDIO</span>
                 <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-blue-500/20 text-blue-400 border border-blue-500/30 uppercase tracking-widest">
-                  PRO
+                  DESKTOP
                 </span>
               </div>
             </div>
@@ -123,7 +106,7 @@ export const AppTopNavigationBar: React.FC<AppTopNavigationBarProps> = ({
                 </button>
                 <ChevronRight className="w-3 h-3 text-slate-600 shrink-0" />
                 <span className="font-semibold text-blue-400 truncate max-w-[140px] sm:max-w-[200px]">
-                  {activeTemplate ? activeTemplate.name : 'Éditeur Studio'}
+                  {activeTemplate ? activeTemplate.name : 'Concepteur Visuel'}
                 </span>
               </>
             )}
@@ -138,23 +121,19 @@ export const AppTopNavigationBar: React.FC<AppTopNavigationBarProps> = ({
                 </button>
                 <ChevronRight className="w-3 h-3 text-slate-600 shrink-0" />
                 <span className="font-semibold text-blue-400 truncate max-w-[140px] sm:max-w-[200px]">
-                  {activeTemplate ? activeTemplate.name : 'Planche & Impression'}
+                  {activeTemplate ? activeTemplate.name : 'Planches & Impression'}
                 </span>
               </>
             )}
 
-            {currentView === 'database' && (
-              <span className="font-semibold text-emerald-400">Base Articles Master</span>
-            )}
-
-            {currentView === 'mobile' && (
-              <span className="font-semibold text-amber-400">Terminal Compagnon Mobile</span>
+            {currentView === 'catalog' && (
+              <span className="font-semibold text-emerald-400">Catalogue Produits & Import</span>
             )}
           </div>
         </div>
 
-        {/* Center: Module View Switcher (Desktop & Tablet) */}
-        <div className="hidden lg:flex items-center bg-slate-950/70 p-1 rounded-xl border border-slate-800 shadow-inner">
+        {/* Center: Module View Switcher */}
+        <div className="flex items-center bg-slate-900 p-1 rounded-xl border border-slate-800 shadow-inner">
           <button
             onClick={() => onNavigate('home')}
             className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition ${
@@ -195,90 +174,38 @@ export const AppTopNavigationBar: React.FC<AppTopNavigationBarProps> = ({
           </button>
 
           <button
-            onClick={() => onNavigate('database')}
+            onClick={() => onNavigate('catalog')}
             className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition ${
-              currentView === 'database'
+              currentView === 'catalog'
                 ? 'bg-emerald-600 text-white shadow-sm'
                 : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
             }`}
-            title="Base de Données Articles (Alt+4)"
+            title="Catalogue & Import Excel/CSV (Alt+4)"
           >
-            <Database className="w-3.5 h-3.5" />
-            <span>Base Master</span>
+            <FileSpreadsheet className="w-3.5 h-3.5" />
+            <span>Catalogue</span>
             {totalProductsCount > 0 && (
               <span className="px-1.5 py-0.2 bg-emerald-500/20 text-emerald-300 text-[10px] font-bold rounded-full">
                 {totalProductsCount}
               </span>
             )}
           </button>
-
-          <button
-            onClick={() => onNavigate('mobile')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition ${
-              currentView === 'mobile'
-                ? 'bg-amber-600 text-white shadow-sm'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
-            }`}
-            title="Terminal Mobile PWA (Alt+5)"
-          >
-            <Smartphone className="w-3.5 h-3.5" />
-            <span>Terminal Mobile</span>
-          </button>
         </div>
 
-        {/* Right Side: Status Badges, Mobile Hub & Tools */}
+        {/* Right Side: Tools Dropdown Menu */}
         <div className="flex items-center gap-2 shrink-0">
-          {/* Mobile Gateway Quick Action */}
           <button
-            onClick={onOpenMobileSync}
-            className="relative px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-medium flex items-center gap-1.5 border border-slate-700 transition"
-            title="Passerelle de synchronisation sans fil avec terminaux mobiles"
+            onClick={onOpenShortcuts}
+            className="p-1.5 bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-white rounded-lg border border-slate-800 transition"
+            title="Raccourcis Clavier"
           >
-            <Smartphone className="w-3.5 h-3.5 text-amber-400" />
-            <span className="hidden sm:inline">Passerelle Mobile</span>
-            {pendingLotsCount > 0 && (
-              <span className="px-1.5 py-0.2 text-[10px] font-bold bg-amber-500 text-slate-950 rounded-full animate-pulse">
-                {pendingLotsCount} lot{pendingLotsCount > 1 ? 's' : ''}
-              </span>
-            )}
+            <Keyboard className="w-4 h-4" />
           </button>
 
-          {/* Database / Turso Quick Status */}
-          <button
-            onClick={onOpenMasterDatabase}
-            className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-800/70 hover:bg-slate-800 text-slate-300 rounded-lg text-xs font-medium border border-slate-700/80 transition"
-            title="Ouvrir la base articles master ou configurer la synchronisation Turso"
-          >
-            <HardDrive className="w-3.5 h-3.5 text-emerald-400" />
-            <span className="font-mono text-[11px] font-semibold text-emerald-300">
-              {totalProductsCount} art.
-            </span>
-            {isTursoConfigured && (
-              <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" title="Turso DB connecté" />
-            )}
-          </button>
-
-          {/* Online / Offline Status Badge */}
-          <div
-            className={`hidden md:flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium border ${
-              isOnline
-                ? 'bg-emerald-950/40 text-emerald-400 border-emerald-800/40'
-                : 'bg-rose-950/40 text-rose-400 border-rose-800/40'
-            }`}
-            title={isOnline ? 'Connecté au réseau local / Internet' : 'Mode Hors-Ligne actif (IndexedDB / PWA)'}
-          >
-            {isOnline ? <Wifi className="w-3 h-3" /> : <WifiOff className="w-3 h-3" />}
-            <span className="text-[10px]">{isOnline ? 'En ligne' : 'Hors-ligne'}</span>
-          </div>
-
-          {/* PWA Install Button */}
-          <PWAInstallButton />
-
-          {/* Tools & Utilities Dropdown Menu */}
           <div className="relative">
             <button
               onClick={() => setToolsDropdownOpen((prev) => !prev)}
-              className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-lg border border-slate-700 transition focus:outline-none"
+              className="p-1.5 bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white rounded-lg border border-slate-800 transition focus:outline-none"
               title="Outils & Paramètres système"
             >
               <Settings2 className="w-4 h-4" />
@@ -293,7 +220,7 @@ export const AppTopNavigationBar: React.FC<AppTopNavigationBarProps> = ({
                 <div className="absolute right-0 mt-2 w-64 bg-slate-900 border border-slate-800 rounded-xl shadow-2xl z-50 p-2 text-xs divide-y divide-slate-800 animate-in fade-in-50 duration-100">
                   <div className="pb-1.5">
                     <span className="px-2 py-1 text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
-                      Modules & Données
+                      Données & Affichage
                     </span>
                     <button
                       onClick={() => {
@@ -323,7 +250,7 @@ export const AppTopNavigationBar: React.FC<AppTopNavigationBarProps> = ({
                       className="w-full text-left px-2.5 py-1.5 text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg flex items-center gap-2 transition"
                     >
                       <Type className="w-3.5 h-3.5 text-amber-400" />
-                      <span>Gestionnaire de polices typographiques</span>
+                      <span>Polices typographiques</span>
                     </button>
                   </div>
 
@@ -339,7 +266,7 @@ export const AppTopNavigationBar: React.FC<AppTopNavigationBarProps> = ({
                       className="w-full text-left px-2.5 py-1.5 text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg flex items-center gap-2 transition"
                     >
                       <History className="w-3.5 h-3.5 text-emerald-400" />
-                      <span>Journal d'audit & traçabilité</span>
+                      <span>Journal d'audit local</span>
                     </button>
                     <button
                       onClick={() => {

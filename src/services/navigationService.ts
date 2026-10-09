@@ -1,4 +1,4 @@
-export type AppView = 'home' | 'editor' | 'generation' | 'database' | 'mobile';
+export type AppView = 'home' | 'editor' | 'generation' | 'catalog';
 
 export interface RouteState {
   view: AppView;
@@ -36,10 +36,8 @@ class NavigationService {
       view = 'editor';
     } else if (cleanPath === 'generation' || cleanPath === 'print' || cleanPath === 'imposition') {
       view = 'generation';
-    } else if (cleanPath === 'database' || cleanPath === 'articles' || cleanPath === 'catalog') {
-      view = 'database';
-    } else if (cleanPath === 'mobile' || cleanPath === 'pwa' || cleanPath === 'terminal') {
-      view = 'mobile';
+    } else if (cleanPath === 'catalog' || cleanPath === 'database' || cleanPath === 'articles') {
+      view = 'catalog';
     } else {
       view = 'home';
     }
@@ -49,20 +47,6 @@ class NavigationService {
       const searchParams = new URLSearchParams(queryPart);
       searchParams.forEach((val, key) => {
         params[key] = val;
-      });
-    }
-
-    // Check query string on window.location.search as fallback (e.g. ?mode=mobile)
-    if (window.location.search) {
-      const urlParams = new URLSearchParams(window.location.search);
-      const mode = urlParams.get('mode');
-      if (mode === 'mobile' || mode === 'pwa') {
-        view = 'mobile';
-      }
-      urlParams.forEach((val, key) => {
-        if (!params[key]) {
-          params[key] = val;
-        }
       });
     }
 
@@ -118,17 +102,6 @@ class NavigationService {
     return () => {
       this.listeners = this.listeners.filter((l) => l !== listener);
     };
-  }
-
-  public buildUrl(view: AppView, params: Record<string, string> = {}): string {
-    let hash = `#/${view}`;
-    const queryEntries = Object.entries(params).filter(([_, v]) => v !== undefined && v !== '');
-    if (queryEntries.length > 0) {
-      const searchParams = new URLSearchParams();
-      queryEntries.forEach(([k, v]) => searchParams.set(k, String(v)));
-      hash += `?${searchParams.toString()}`;
-    }
-    return hash;
   }
 }
 

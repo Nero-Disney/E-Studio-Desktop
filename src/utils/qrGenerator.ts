@@ -1,98 +1,46 @@
-// Lightweight, robust QR code matrix generator with High-Performance LRU/Map caching
+import QRCode from 'qrcode';
 
+// Standards-compliant QR Code Matrix generator backed by ISO/IEC 18004 encoder
 const qrMatrixCache = new Map<string, boolean[][]>();
 const qrPathCache = new Map<string, string>();
 
-export function generateQrMatrix(text: string): boolean[][] {
-  const content = text || 'https://example.com';
-  const cached = qrMatrixCache.get(content);
+export function generateQrMatrix(
+  text: string,
+  errorCorrectionLevel: 'L' | 'M' | 'Q' | 'H' = 'M'
+): boolean[][] {
+  const content = text && text.trim().length > 0 ? text : '0';
+  const cacheKey = `${errorCorrectionLevel}:${content}`;
+  const cached = qrMatrixCache.get(cacheKey);
   if (cached) return cached;
 
-  const size = 25; // 25x25 Version 2 grid
-  const matrix: boolean[][] = Array.from({ length: size }, () => Array(size).fill(false));
+  try {
+    const qr = QRCode.create(content, { errorCorrectionLevel });
+    const size = qr.modules.size;
+    const matrix: boolean[][] = [];
 
-  function setFinderPattern(r: number, c: number) {
-    for (let i = -1; i <= 7; i++) {
-      for (let j = -1; j <= 7; j++) {
-        const row = r + i;
-        const col = c + j;
-        if (row >= 0 && row < size && col >= 0 && col < size) {
-          if (i >= 0 && i <= 6 && j >= 0 && j <= 6) {
-            if (i === 0 || i === 6 || j === 0 || j === 6 || (i >= 2 && i <= 4 && j >= 2 && j <= 4)) {
-              matrix[row][col] = true;
-            } else {
-              matrix[row][col] = false;
-            }
-          } else {
-            matrix[row][col] = false;
-          }
-        }
+    for (let r = 0; r < size; r++) {
+      const row: boolean[] = [];
+      for (let c = 0; c < size; c++) {
+        row.push(Boolean(qr.modules.get(r, c)));
       }
+      matrix.push(row);
     }
+
+    if (qrMatrixCache.size > 1000) qrMatrixCache.clear();
+    qrMatrixCache.set(cacheKey, matrix);
+    return matrix;
+  } catch (err) {
+    console.error('Failed to generate standards-compliant QR code:', err);
+    return [];
   }
-
-  // Set 3 finder patterns
-  setFinderPattern(0, 0);
-  setFinderPattern(0, size - 7);
-  setFinderPattern(size - 7, 0);
-
-  // Timing patterns
-  for (let i = 8; i < size - 8; i++) {
-    matrix[6][i] = i % 2 === 0;
-    matrix[i][6] = i % 2 === 0;
-  }
-
-  // Alignment pattern at bottom right
-  const ar = size - 7;
-  const ac = size - 7;
-  for (let i = -2; i <= 2; i++) {
-    for (let j = -2; j <= 2; j++) {
-      if (Math.abs(i) === 2 || Math.abs(j) === 2 || (i === 0 && j === 0)) {
-        matrix[ar + i][ac + j] = true;
-      } else {
-        matrix[ar + i][ac + j] = false;
-      }
-    }
-  }
-
-  // Deterministic pseudo-random fill based on input text content
-  let hash = 0;
-  for (let i = 0; i < content.length; i++) {
-    hash = ((hash << 5) - hash + content.charCodeAt(i)) | 0;
-  }
-  let seed = Math.abs(hash) || 12345;
-
-  function nextBit(): boolean {
-    seed = (seed * 16807) % 2147483647;
-    return (seed & 1) === 1;
-  }
-
-  for (let r = 0; r < size; r++) {
-    for (let c = 0; c < size; c++) {
-      // Don't overwrite finders
-      if (
-        (r <= 7 && c <= 7) ||
-        (r <= 7 && c >= size - 8) ||
-        (r >= size - 8 && c <= 7) ||
-        (r === 6 || c === 6) ||
-        (r >= ar - 2 && r <= ar + 2 && c >= ac - 2 && c <= ac + 2)
-      ) {
-        continue;
-      }
-      matrix[r][c] = nextBit();
-    }
-  }
-
-  if (qrMatrixCache.size > 2000) qrMatrixCache.clear();
-  qrMatrixCache.set(content, matrix);
-  return matrix;
 }
 
 /**
  * Builds a single SVG path definition string for a QR matrix.
- * Collapses up to ~841 individual SVG <rect> tags into 1 single <path> tag!
+ * Efficiently batches runs of consecutive modules into horizontal lines.
  */
 export function getQrSvgPath(matrix: boolean[][]): string {
+  if (!matrix || matrix.length === 0) return '';
   const size = matrix.length;
   const cacheKey = `${size}_${matrix[0]?.slice(0, 10).join('')}_${matrix[matrix.length - 1]?.slice(0, 10).join('')}`;
   const cached = qrPathCache.get(cacheKey);
@@ -128,7 +76,7 @@ export function getQrSvgPath(matrix: boolean[][]): string {
 }
 
 /**
- * Renders a crisp rasterized QR Code dataURL (PNG) for office document embeds (PPTX, HTML)
+ * Renders a crisp rasterized standards-compliant QR Code dataURL (PNG)
  */
 export function renderQrToDataUrl(
   content: string,
@@ -137,10 +85,11 @@ export function renderQrToDataUrl(
 ): string {
   if (typeof document === 'undefined') return '';
 
-  const matrix = generateQrMatrix(content || 'https://example.com');
+  const matrix = generateQrMatrix(content || '0');
+  if (matrix.length === 0) return '';
   const size = matrix.length;
   const scale = 8;
-  const quietZone = 2; // 2 module quiet zone border
+  const quietZone = 4; // ISO quiet zone standard: 4 modules
   const fullSize = (size + quietZone * 2) * scale;
 
   const canvas = document.createElement('canvas');

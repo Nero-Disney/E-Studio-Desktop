@@ -1,4 +1,4 @@
-// Vector Code 128 and EAN-13 Barcode generator with High-Performance LRU/Map caching
+// Vector Code 128 and EAN-13 Barcode generator with strict GS1 validation and caching
 
 const CODE128_PATTERNS: string[] = [
   "212222", "222122", "222221", "121223", "121322", "131222", "122213", "122312", "132212", "221213",
@@ -14,13 +14,78 @@ const CODE128_PATTERNS: string[] = [
   "114131", "311141", "411131", "211412", "211214", "211232", "2331112"
 ];
 
+// EAN-13 encodings
+const EAN_L = [
+  "0001101", "0011001", "0010011", "0111101", "0100011",
+  "0110001", "0101111", "0111011", "0110111", "0001011"
+];
+const EAN_G = [
+  "0100111", "0110011", "0011011", "0100001", "0011101",
+  "0111001", "0000101", "0010001", "0001001", "0010111"
+];
+const EAN_R = [
+  "1110010", "1100110", "1101100", "1000010", "1011100",
+  "1001110", "1010000", "1000100", "1001000", "1110100"
+];
+const EAN_PARITY = [
+  "LLLLLL", "LLGLGG", "LLGGLG", "LLGGGL", "LGLLGG",
+  "LGGLLG", "LGGGLL", "LGLGLG", "LGLGGL", "LGGLGL"
+];
+
 // Runtime Memoization Caches
 const code128Cache = new Map<string, boolean[]>();
-const ean13Cache = new Map<string, { bars: boolean[]; formattedCode: string }>();
+const ean13Cache = new Map<string, { bars: boolean[]; formattedCode: string; error?: string }>();
 const svgPathCache = new Map<string, string>();
 
+/**
+ * Validates whether a given string is a strictly compliant EAN-13 or 12-digit UPC code.
+ */
+export function validateEAN13(code: string): { valid: boolean; reason?: string; normalizedCode?: string } {
+  if (!code || typeof code !== 'string') {
+    return { valid: false, reason: 'Code-barre manquant ou vide' };
+  }
+  const trimmed = code.trim();
+  if (!/^\d+$/.test(trimmed)) {
+    return { valid: false, reason: 'Un code EAN-13 ne doit contenir que des chiffres décimaux (0-9)' };
+  }
+
+  if (trimmed.length === 12) {
+    // 12 digits: calculate and append check digit
+    let sum = 0;
+    for (let i = 0; i < 12; i++) {
+      sum += parseInt(trimmed[i], 10) * (i % 2 === 0 ? 1 : 3);
+    }
+    const checkDigit = (10 - (sum % 10)) % 10;
+    return { valid: true, normalizedCode: trimmed + checkDigit };
+  }
+
+  if (trimmed.length === 13) {
+    // 13 digits: strictly verify checksum
+    let sum = 0;
+    for (let i = 0; i < 12; i++) {
+      sum += parseInt(trimmed[i], 10) * (i % 2 === 0 ? 1 : 3);
+    }
+    const expectedCheck = (10 - (sum % 10)) % 10;
+    const actualCheck = parseInt(trimmed[12], 10);
+    if (actualCheck !== expectedCheck) {
+      return {
+        valid: false,
+        reason: `Clé de contrôle EAN-13 invalide (attendu: ${expectedCheck}, trouvé: ${actualCheck})`,
+      };
+    }
+    return { valid: true, normalizedCode: trimmed };
+  }
+
+  return {
+    valid: false,
+    reason: `Longueur EAN-13 invalide : ${trimmed.length} chiffres (13 chiffres requis, ou 12 sans clé)`,
+  };
+}
+
 export function generateCode128Bars(text: string): boolean[] {
-  const clean = text || "123456789012";
+  const clean = text ? text.trim() : "";
+  if (!clean) return [];
+
   const cached = code128Cache.get(clean);
   if (cached) return cached;
 
@@ -67,68 +132,57 @@ export function generateCode128Bars(text: string): boolean[] {
   return bars;
 }
 
-// EAN-13 encodings
-const EAN_L = [
-  "0001101", "0011001", "0010011", "0111101", "0100011",
-  "0110001", "0101111", "0111011", "0110111", "0001011"
-];
-const EAN_G = [
-  "0100111", "0110011", "0011011", "0100001", "0011101",
-  "0111001", "0000101", "0010001", "0001001", "0010111"
-];
-const EAN_R = [
-  "1110010", "1100110", "1101100", "1000010", "1011100",
-  "1001110", "1010000", "1000100", "1001000", "1110100"
-];
-const EAN_PARITY = [
-  "LLLLLL", "LLGLGG", "LLGGLG", "LLGGGL", "LGLLGG",
-  "LGGLLG", "LGGGLL", "LGLGLG", "LGLGGL", "LGGLGL"
-];
+export function generateEAN13Bars(code: string): { bars: boolean[]; formattedCode: string; error?: string } {
+  if (!code) {
+    return { bars: [], formattedCode: '', error: 'Code vide' };
+  }
 
-export function generateEAN13Bars(code: string): { bars: boolean[]; formattedCode: string } {
   const cached = ean13Cache.get(code);
   if (cached) return cached;
 
-  const digitsOnly = code.replace(/\D/g, "").padStart(12, "0").slice(-12);
-  
-  // Calculate checksum
-  let sum = 0;
-  for (let i = 0; i < 12; i++) {
-    sum += parseInt(digitsOnly[i], 10) * (i % 2 === 0 ? 1 : 3);
+  const validation = validateEAN13(code);
+  if (!validation.valid || !validation.normalizedCode) {
+    const result = {
+      bars: [],
+      formattedCode: code,
+      error: validation.reason || 'Code EAN-13 non conforme',
+    };
+    ean13Cache.set(code, result);
+    return result;
   }
-  const checkDigit = (10 - (sum % 10)) % 10;
-  const full13 = digitsOnly + checkDigit.toString();
 
+  const full13 = validation.normalizedCode;
   const firstDigit = parseInt(full13[0], 10);
-  const parity = EAN_PARITY[firstDigit];
+  const parityPattern = EAN_PARITY[firstDigit];
 
   const bars: boolean[] = [];
-  // Normal quiet zone / start guard: 101
+
+  // Start guard (101)
   bars.push(true, false, true);
 
-  // First group of 6 digits (L or G)
-  for (let i = 0; i < 6; i++) {
-    const digit = parseInt(full13[i + 1], 10);
-    const useG = parity[i] === 'G';
+  // Left 6 digits
+  for (let i = 1; i <= 6; i++) {
+    const digit = parseInt(full13[i], 10);
+    const useG = parityPattern[i - 1] === 'G';
     const pattern = useG ? EAN_G[digit] : EAN_L[digit];
-    for (let b = 0; b < pattern.length; b++) {
-      bars.push(pattern[b] === '1');
+    for (let j = 0; j < pattern.length; j++) {
+      bars.push(pattern[j] === '1');
     }
   }
 
-  // Center guard pattern: 01010
+  // Center guard (01010)
   bars.push(false, true, false, true, false);
 
-  // Second group of 6 digits (always R)
-  for (let i = 6; i < 12; i++) {
-    const digit = parseInt(full13[i + 1], 10);
+  // Right 6 digits (always R encoding)
+  for (let i = 7; i <= 12; i++) {
+    const digit = parseInt(full13[i], 10);
     const pattern = EAN_R[digit];
-    for (let b = 0; b < pattern.length; b++) {
-      bars.push(pattern[b] === '1');
+    for (let j = 0; j < pattern.length; j++) {
+      bars.push(pattern[j] === '1');
     }
   }
 
-  // End guard: 101
+  // Stop guard (101)
   bars.push(true, false, true);
 
   const formattedCode = `${full13[0]} ${full13.slice(1, 7)} ${full13.slice(7)}`;
@@ -140,88 +194,111 @@ export function generateEAN13Bars(code: string): { bars: boolean[]; formattedCod
 }
 
 /**
- * Converts a boolean bar array into a single contiguous SVG path string
- * Drops 100+ separate <rect> nodes down to 1 single <path> node (99% DOM reduction!)
+ * Builds a single SVG path definition string for a barcode bar array.
  */
 export function getBarcodeSvgPath(bars: boolean[], height: number = 100): string {
-  const cacheKey = `${bars.length}_${height}_${bars.slice(0, 10).join('')}`;
-  const cached = svgPathCache.get(cacheKey);
+  if (!bars || bars.length === 0) return '';
+  const key = `${bars.length}_${height}_${bars.slice(0, 15).join('')}_${bars.slice(-15).join('')}`;
+  const cached = svgPathCache.get(key);
   if (cached) return cached;
 
   let d = '';
-  for (let i = 0; i < bars.length; i++) {
+  const total = bars.length;
+  const barWidth = 100 / total;
+
+  let i = 0;
+  while (i < total) {
     if (bars[i]) {
-      let run = 1;
-      while (i + 1 < bars.length && bars[i + 1]) {
-        run++;
-        i++;
+      let span = 1;
+      while (i + span < total && bars[i + span]) {
+        span++;
       }
-      d += `M${i - run + 1} 0h${run}v${height}h-${run}Z `;
+      const x = (i * barWidth).toFixed(3);
+      const w = (span * barWidth + 0.05).toFixed(3);
+      d += `M${x} 0h${w}v${height}h-${w}Z `;
+      i += span;
+    } else {
+      i++;
     }
   }
 
   if (svgPathCache.size > 1000) svgPathCache.clear();
-  svgPathCache.set(cacheKey, d);
+  svgPathCache.set(key, d);
   return d;
 }
 
 /**
- * High-performance offscreen canvas renderer for exporting raster images
+ * Renders a crisp rasterized barcode dataURL (PNG) with proper quiet zones.
  */
 export function renderBarcodeToDataUrl(
-  code: string,
-  type: 'code128' | 'ean13',
-  showText: boolean = true,
-  barColor: string = '#000000',
-  scale: number = 2
+  barsOrCode: boolean[] | string,
+  barColorOrType: string = '#000000',
+  backgroundColorOrShowText: string | boolean = '#FFFFFF',
+  widthPxOrColor: number | string = 300,
+  heightPx: number = 100
 ): string {
   if (typeof document === 'undefined') return '';
-  const canvas = document.createElement('canvas');
-  
   let bars: boolean[] = [];
-  let textToShow = code;
+  let barColor = '#000000';
+  let backgroundColor = '#FFFFFF';
+  let widthPx = 300;
 
-  try {
-    if (type === 'ean13') {
-      const res = generateEAN13Bars(code);
-      bars = res.bars;
-      textToShow = res.formattedCode;
-    } else {
+  if (typeof barsOrCode === 'string') {
+    const code = barsOrCode;
+    const type =
+      typeof barColorOrType === 'string' && (barColorOrType === 'code128' || barColorOrType === 'ean13')
+        ? barColorOrType
+        : 'ean13';
+    try {
+      if (type === 'ean13') {
+        const eanRes = generateEAN13Bars(code);
+        bars = eanRes.bars;
+      } else {
+        bars = generateCode128Bars(code);
+      }
+    } catch {
       bars = generateCode128Bars(code);
     }
-  } catch {
-    bars = generateCode128Bars(code);
+    if (typeof widthPxOrColor === 'string') {
+      barColor = widthPxOrColor;
+    }
+  } else {
+    bars = barsOrCode || [];
+    barColor = typeof barColorOrType === 'string' ? barColorOrType : '#000000';
+    backgroundColor = typeof backgroundColorOrShowText === 'string' ? backgroundColorOrShowText : '#FFFFFF';
+    widthPx = typeof widthPxOrColor === 'number' ? widthPxOrColor : 300;
   }
 
-  const barCount = Math.max(1, bars.length);
-  const widthPx = Math.max(240, barCount * 3) * scale;
-  const heightPx = (showText ? 90 : 65) * scale;
-  
+  if (!bars || bars.length === 0) return '';
+
+  const canvas = document.createElement('canvas');
   canvas.width = widthPx;
   canvas.height = heightPx;
   const ctx = canvas.getContext('2d');
   if (!ctx) return '';
 
-  // White background
-  ctx.fillStyle = '#FFFFFF';
+  ctx.fillStyle = backgroundColor || '#FFFFFF';
   ctx.fillRect(0, 0, widthPx, heightPx);
 
-  const barUnitW = widthPx / barCount;
-  const barH = showText ? heightPx * 0.72 : heightPx;
+  const quietMargin = Math.round(widthPx * 0.05);
+  const drawableWidth = widthPx - quietMargin * 2;
+  const barWidth = drawableWidth / bars.length;
 
   ctx.fillStyle = barColor || '#000000';
-  for (let i = 0; i < barCount; i++) {
+  let i = 0;
+  while (i < bars.length) {
     if (bars[i]) {
-      ctx.fillRect(i * barUnitW, 0, barUnitW + 0.5, barH);
+      let span = 1;
+      while (i + span < bars.length && bars[i + span]) {
+        span++;
+      }
+      const x = quietMargin + i * barWidth;
+      const w = span * barWidth;
+      ctx.fillRect(x, 0, Math.max(1, Math.round(w)), heightPx);
+      i += span;
+    } else {
+      i++;
     }
-  }
-
-  if (showText && textToShow) {
-    ctx.fillStyle = barColor || '#000000';
-    ctx.font = `bold ${Math.round(13 * scale)}px "Courier New", monospace`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(textToShow, widthPx / 2, heightPx * 0.86);
   }
 
   return canvas.toDataURL('image/png');

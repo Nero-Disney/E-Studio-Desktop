@@ -18,6 +18,7 @@ import {
   RestrictedAreaItemProperties,
   BaseItemProperties,
 } from '../types';
+import { isPriceRelatedElement, sanitizeNonPriceElement } from '../utils/pricingEngine';
 
 // Standard available fonts in browser and export engines
 export const AVAILABLE_FONTS = [
@@ -486,15 +487,18 @@ export function extractElementStyle(item: TemplateItem): ElementStylePayload {
   if (it.thickness !== undefined) style.thickness = it.thickness;
   if (it.style !== undefined) style.style = it.style;
 
-  if (it.is_price !== undefined) style.is_price = it.is_price;
-  if (it.currency_symbol !== undefined) style.currency_symbol = it.currency_symbol;
-  if (it.currency_position !== undefined) style.currency_position = it.currency_position;
-  if (it.currency_font_family !== undefined) style.currency_font_family = it.currency_font_family;
-  if (it.currency_font_size_pt !== undefined) style.currency_font_size_pt = it.currency_font_size_pt;
-  if (it.currency_font_weight !== undefined) style.currency_font_weight = it.currency_font_weight;
-  if (it.currency_font_style !== undefined) style.currency_font_style = it.currency_font_style;
-  if (it.currency_color !== undefined) style.currency_color = it.currency_color;
-  if (it.currency_spacing_pt !== undefined) style.currency_spacing_pt = it.currency_spacing_pt;
+  // Currency & price properties are only extracted if the element is price-related
+  if (isPriceRelatedElement(item)) {
+    if (it.is_price !== undefined) style.is_price = it.is_price;
+    if (it.currency_symbol !== undefined) style.currency_symbol = it.currency_symbol;
+    if (it.currency_position !== undefined) style.currency_position = it.currency_position;
+    if (it.currency_font_family !== undefined) style.currency_font_family = it.currency_font_family;
+    if (it.currency_font_size_pt !== undefined) style.currency_font_size_pt = it.currency_font_size_pt;
+    if (it.currency_font_weight !== undefined) style.currency_font_weight = it.currency_font_weight;
+    if (it.currency_font_style !== undefined) style.currency_font_style = it.currency_font_style;
+    if (it.currency_color !== undefined) style.currency_color = it.currency_color;
+    if (it.currency_spacing_pt !== undefined) style.currency_spacing_pt = it.currency_spacing_pt;
+  }
 
   if (it.bar_color !== undefined) style.bar_color = it.bar_color;
   if (it.module_color !== undefined) style.module_color = it.module_color;

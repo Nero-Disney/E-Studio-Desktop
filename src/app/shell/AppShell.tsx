@@ -5,7 +5,6 @@ import { DashboardScreen } from '../../features/dashboard/DashboardScreen';
 import { TemplateEditorScreen } from '../../features/template-editor/TemplateEditorScreen';
 import { GenerationScreen } from '../../features/generation/GenerationScreen';
 import { CatalogScreen } from '../../features/catalog/CatalogScreen';
-import { MobileSyncScreen } from '../../features/mobile-sync/MobileSyncScreen';
 import { RulesEngineScreen } from '../../features/rules-engine/RulesEngineScreen';
 
 export function AppShell() {
@@ -21,8 +20,6 @@ export function AppShell() {
         return <GenerationScreen />;
       case 'catalog':
         return <CatalogScreen />;
-      case 'mobile-sync':
-        return <MobileSyncScreen />;
       case 'rules-engine':
         return <RulesEngineScreen />;
       default:
@@ -31,15 +28,15 @@ export function AppShell() {
   }, [activeSection]);
 
   return (
-    <div className="flex h-screen bg-slate-100 text-slate-900">
-      <aside className="w-72 border-r border-slate-200 bg-slate-950 text-slate-100">
+    <div className="flex h-screen bg-slate-950 text-slate-100">
+      <aside className="w-72 border-r border-slate-800 bg-slate-950 text-slate-100">
         <div className="flex items-center gap-3 border-b border-slate-800 px-5 py-4">
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-600 font-bold text-white">
             E
           </div>
           <div>
             <div className="text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-400">
-              Studio
+              Desktop
             </div>
             <div className="text-lg font-bold text-white">E-Studio</div>
           </div>

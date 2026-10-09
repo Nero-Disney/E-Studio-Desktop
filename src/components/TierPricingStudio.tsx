@@ -14,7 +14,6 @@ import {
 } from 'lucide-react';
 import { ProductRecord, PriceTierBreak } from '../types';
 import { TierDetectionEngine } from '../utils/tierDetectionEngine';
-import { SAMPLE_IMPLICIT_MULTI_ROW_DATA } from '../sampleData';
 
 interface TierPricingStudioProps {
   products: ProductRecord[];
@@ -107,10 +106,15 @@ export const TierPricingStudio: React.FC<TierPricingStudioProps> = ({
     onUpdateProduct(updated);
   };
 
-  // Run Implicit multi-row ingestion demo
+  // Run Implicit multi-row ingestion
   const handleRunImplicitAggregation = () => {
-    const aggregated = TierDetectionEngine.aggregateImplicitMultiRows(SAMPLE_IMPLICIT_MULTI_ROW_DATA);
-    onBatchUpdateProducts([...products, ...aggregated]);
+    if (!products || products.length === 0) {
+      alert('Veuillez d\'abord charger ou importer des articles dans le catalogue.');
+      setShowImplicitModal(false);
+      return;
+    }
+    const aggregated = TierDetectionEngine.aggregateImplicitMultiRows(products);
+    onBatchUpdateProducts(aggregated);
     if (aggregated.length > 0) {
       setSelectedProductId(aggregated[0].id);
     }
@@ -614,10 +618,10 @@ export const TierPricingStudio: React.FC<TierPricingStudioProps> = ({
               </p>
 
               <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 font-mono text-[11px] space-y-1">
-                <div className="font-bold text-slate-700">Données ERP Simulatrices Détectées :</div>
-                <div className="text-slate-500">• EAN-32503901: Monster 500ml (4 lignes: 1u @ 2.20€, 4u @ 1.95€, 12u @ 1.70€, 24u @ 1.50€)</div>
-                <div className="text-slate-500">• EAN-32503902: Farine Francine 1kg (3 lignes: 1u @ 1.40€, 5u @ 1.25€, 10u @ 1.10€)</div>
-                <div className="text-rose-600">• EAN-32503903: Piles PowerMax (3 lignes avec conflit de prix et anomalie de progression)</div>
+                <div className="font-bold text-slate-700">État du Catalogue Courant :</div>
+                <div className="text-slate-600">• Nombre d'articles chargés : {products.length}</div>
+                <div className="text-slate-600">• Articles avec anomalies : {anomalousCount}</div>
+                <div className="text-slate-500">• Clés de regroupement utilisées : PRODUCT_SCAN, PARTNO, EAN, SKU</div>
               </div>
             </div>
 

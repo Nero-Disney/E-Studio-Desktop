@@ -6,9 +6,7 @@ import { AppTopNavigationBar } from '../components/AppTopNavigationBar';
 import { HomeDashboard } from '../components/HomeDashboard';
 import { TemplateEditor } from '../components/TemplateEditor';
 import { GenerationWorkspace } from '../components/GenerationWorkspace';
-import { MasterDatabaseStudio } from '../components/MasterDatabaseStudio';
-import { MobileTerminalView } from '../pwa/components/MobileTerminalView';
-import { MobileSyncHubModal } from '../pwa/components/MobileSyncHubModal';
+import { CatalogManagementStudio } from '../components/CatalogManagementStudio';
 import { OmniChannelStudioModal } from '../components/OmniChannelStudioModal';
 import { NewGabaritWizard } from '../components/NewGabaritWizard';
 import { AuditTrailModal } from '../components/AuditTrailModal';
@@ -17,45 +15,37 @@ import { KeyboardShortcutsModal } from '../components/KeyboardShortcutsModal';
 import { MappingDictionaryModal } from '../components/MappingDictionaryModal';
 import { AccessibilityPreferencesModal } from '../components/AccessibilityPreferencesModal';
 import { LabelTemplate, ProductRecord } from '../types';
-import { DEFAULT_TEMPLATES } from '../defaultTemplates';
-import { databaseService } from '../services/databaseService';
+import { catalogRepository } from '../services/catalogRepository';
 import { navigationService, AppView } from '../services/navigationService';
-import { mobileSyncService } from '../pwa/services/mobileSyncService';
-import { OfflineStorageManager } from '../utils/offlineStorage';
+import { AuditLogService } from '../services/auditLogService';
 
-const TEMPLATES_STORAGE_KEY = 'estudio_saved_templates_v2';
+const TEMPLATES_STORAGE_KEY = 'estudio_desktop_templates_v3';
 
 function MainWorkspace() {
   const [currentView, setCurrentView] = useState<AppView>('home');
+  // Starts with genuine empty array on clean install
   const [templates, setTemplates] = useState<LabelTemplate[]>(() => {
     try {
       const saved = localStorage.getItem(TEMPLATES_STORAGE_KEY);
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed)) return parsed;
       }
     } catch (e) {
-      console.warn('Failed to load saved templates', e);
+      console.warn('Failed to load local templates workspace', e);
     }
-    return DEFAULT_TEMPLATES;
+    return [];
   });
 
   const [activeTemplate, setActiveTemplate] = useState<LabelTemplate | null>(() => templates[0] || null);
   const [generationProducts, setGenerationProducts] = useState<ProductRecord[] | undefined>(undefined);
   const [generationBatchName, setGenerationBatchName] = useState<string | undefined>(undefined);
 
-  // Database products count
-  const [productsCount, setProductsCount] = useState<number>(() => databaseService.getProducts().length);
-  const [isTursoConfigured, setIsTursoConfigured] = useState<boolean>(() => databaseService.getTursoConfig().enabled);
-
-  // Mobile pending lots count
-  const getPendingLots = () =>
-    mobileSyncService.getLots().filter((l) => l.status === 'ready' || l.status === 'received').length;
-  const [pendingLotsCount, setPendingLotsCount] = useState<number>(getPendingLots);
+  // Catalog products count
+  const [productsCount, setProductsCount] = useState<number>(() => catalogRepository.getProducts().length);
 
   // Modals state
   const [isNewWizardOpen, setIsNewWizardOpen] = useState(false);
-  const [isMobileSyncOpen, setIsMobileSyncOpen] = useState(false);
   const [isRulesModalOpen, setIsRulesModalOpen] = useState(false);
   const [isAuditLogsOpen, setIsAuditLogsOpen] = useState(false);
   const [isFontManagerOpen, setIsFontManagerOpen] = useState(false);
@@ -85,19 +75,10 @@ function MainWorkspace() {
     return () => unsub();
   }, [templates]);
 
-  // Subscribe to Database Service changes
+  // Subscribe to Catalog Repository changes
   useEffect(() => {
-    const unsub = databaseService.subscribe((products) => {
+    const unsub = catalogRepository.subscribe((products) => {
       setProductsCount(products.length);
-      setIsTursoConfigured(databaseService.getTursoConfig().enabled);
-    });
-    return () => unsub();
-  }, []);
-
-  // Subscribe to Mobile Sync Service
-  useEffect(() => {
-    const unsub = mobileSyncService.subscribe(() => {
-      setPendingLotsCount(getPendingLots());
     });
     return () => unsub();
   }, []);
@@ -134,8 +115,8 @@ function MainWorkspace() {
     }
     saveTemplates(nextTemplates);
     setActiveTemplate(updated);
-    OfflineStorageManager.appendAuditLog({
-      user: 'Opérateur Studio',
+    AuditLogService.append({
+      user: 'Opérateur Local',
       action: 'MODIFICATION_GABARIT',
       template_name: updated.name,
       details: `Gabarit sauvegardé : ${updated.name} (${updated.items.length} éléments)`,
@@ -151,8 +132,8 @@ function MainWorkspace() {
     const nextTemplates = [duplicated, ...templates];
     saveTemplates(nextTemplates);
     setActiveTemplate(duplicated);
-    OfflineStorageManager.appendAuditLog({
-      user: 'Opérateur Studio',
+    AuditLogService.append({
+      user: 'Opérateur Local',
       action: 'DUPLICATION_GABARIT',
       template_name: copyName,
       details: `Gabarit dupliqué depuis : ${template.name}`,
@@ -165,8 +146,8 @@ function MainWorkspace() {
     if (activeTemplate?.name === templateName) {
       setActiveTemplate(nextTemplates[0] || null);
     }
-    OfflineStorageManager.appendAuditLog({
-      user: 'Opérateur Studio',
+    AuditLogService.append({
+      user: 'Opérateur Local',
       action: 'SUPPRESSION_GABARIT',
       template_name: templateName,
       details: `Gabarit supprimé : ${templateName}`,
@@ -177,8 +158,8 @@ function MainWorkspace() {
     const nextTemplates = [imported, ...templates.filter((t) => t.name !== imported.name)];
     saveTemplates(nextTemplates);
     setActiveTemplate(imported);
-    OfflineStorageManager.appendAuditLog({
-      user: 'Opérateur Studio',
+    AuditLogService.append({
+      user: 'Opérateur Local',
       action: 'IMPORT_GABARIT',
       template_name: imported.name,
       details: `Gabarit importé : ${imported.name}`,
@@ -191,8 +172,8 @@ function MainWorkspace() {
     setActiveTemplate(newTemplate);
     setIsNewWizardOpen(false);
     navigationService.navigateTo('editor', { template: newTemplate.name });
-    OfflineStorageManager.appendAuditLog({
-      user: 'Opérateur Studio',
+    AuditLogService.append({
+      user: 'Opérateur Local',
       action: 'CREATION_GABARIT',
       template_name: newTemplate.name,
       details: `Nouveau gabarit créé : ${newTemplate.name} (${newTemplate.width_mm}x${newTemplate.height_mm}mm)`,
@@ -200,26 +181,21 @@ function MainWorkspace() {
   };
 
   return (
-    <div className="flex flex-col h-screen w-screen overflow-hidden bg-slate-900 text-slate-100 font-sans">
-      {/* Unified Top Navigation Bar (Except in standalone mobile view) */}
-      {currentView !== 'mobile' && (
-        <AppTopNavigationBar
-          currentView={currentView}
-          activeTemplate={activeTemplate}
-          templates={templates}
-          totalProductsCount={productsCount}
-          pendingLotsCount={pendingLotsCount}
-          isTursoConfigured={isTursoConfigured}
-          onNavigate={handleNavigate}
-          onOpenMobileSync={() => setIsMobileSyncOpen(true)}
-          onOpenMasterDatabase={() => handleNavigate('database')}
-          onOpenRulesModal={() => setIsRulesModalOpen(true)}
-          onOpenFontManager={() => setIsFontManagerOpen(true)}
-          onOpenAuditLogs={() => setIsAuditLogsOpen(true)}
-          onOpenMappingDictionary={() => setIsMappingDictOpen(true)}
-          onOpenPreferences={() => setIsPreferencesOpen(true)}
-        />
-      )}
+    <div className="flex flex-col h-screen w-screen overflow-hidden bg-slate-950 text-slate-100 font-sans">
+      {/* Top Navigation Bar */}
+      <AppTopNavigationBar
+        currentView={currentView}
+        activeTemplate={activeTemplate}
+        templates={templates}
+        totalProductsCount={productsCount}
+        onNavigate={handleNavigate}
+        onOpenRulesModal={() => setIsRulesModalOpen(true)}
+        onOpenFontManager={() => setIsFontManagerOpen(true)}
+        onOpenAuditLogs={() => setIsAuditLogsOpen(true)}
+        onOpenMappingDictionary={() => setIsMappingDictOpen(true)}
+        onOpenPreferences={() => setIsPreferencesOpen(true)}
+        onOpenShortcuts={() => setIsShortcutsOpen(true)}
+      />
 
       {/* Main Viewport Container */}
       <main className="flex-1 flex min-h-0 min-w-0 overflow-hidden relative">
@@ -236,15 +212,23 @@ function MainWorkspace() {
             onOpenAuditLogs={() => setIsAuditLogsOpen(true)}
             onOpenFontManager={() => setIsFontManagerOpen(true)}
             onOpenMappingDictionary={() => setIsMappingDictOpen(true)}
-            onOpenMobileSync={() => setIsMobileSyncOpen(true)}
-            onOpenMasterDatabase={() => handleNavigate('database')}
-            pendingLotsCount={pendingLotsCount}
+            onOpenCatalog={() => handleNavigate('catalog')}
           />
         )}
 
         {currentView === 'editor' && (
           <TemplateEditor
-            initialTemplate={activeTemplate || templates[0]}
+            initialTemplate={activeTemplate || {
+              schema_version: 1,
+              name: 'Nouveau Gabarit',
+              width_mm: 100,
+              height_mm: 50,
+              inner_margins_mm: { top: 2, bottom: 2, left: 2, right: 2 },
+              outer_margins_mm: { top: 1, bottom: 1, left: 1, right: 1 },
+              bg_color: '#FFFFFF',
+              bg_opacity: 1,
+              items: [],
+            }}
             onSaveTemplate={handleSaveTemplate}
             onBackToHome={() => handleNavigate('home')}
             onOpenGeneration={(t) => handleSelectTemplateToGenerate(t)}
@@ -254,28 +238,36 @@ function MainWorkspace() {
 
         {currentView === 'generation' && (
           <GenerationWorkspace
-            template={activeTemplate || templates[0]}
+            template={activeTemplate || {
+              schema_version: 1,
+              name: 'Gabarit Standard',
+              width_mm: 100,
+              height_mm: 50,
+              inner_margins_mm: { top: 2, bottom: 2, left: 2, right: 2 },
+              outer_margins_mm: { top: 1, bottom: 1, left: 1, right: 1 },
+              bg_color: '#FFFFFF',
+              bg_opacity: 1,
+              items: [],
+            }}
             onBack={() => handleNavigate('home')}
             initialProducts={generationProducts}
             initialBatchName={generationBatchName}
           />
         )}
 
-        {currentView === 'database' && (
-          <MasterDatabaseStudio
+        {currentView === 'catalog' && (
+          <CatalogManagementStudio
             onBack={() => handleNavigate('home')}
             templates={templates}
             onGenerateFromDatabase={(selectedItems) => {
+              if (templates.length === 0) {
+                alert('Veuillez d\'abord créer un gabarit d\'étiquette avant de lancer la génération.');
+                handleNavigate('home');
+                return;
+              }
               const defaultTemplate = activeTemplate || templates[0];
-              handleSelectTemplateToGenerate(defaultTemplate, selectedItems, 'Sélection Base Articles');
+              handleSelectTemplateToGenerate(defaultTemplate, selectedItems, 'Sélection Catalogue');
             }}
-          />
-        )}
-
-        {currentView === 'mobile' && (
-          <MobileTerminalView
-            templates={templates}
-            onBackToDesktop={() => handleNavigate('home')}
           />
         )}
       </main>
@@ -285,37 +277,6 @@ function MainWorkspace() {
         isOpen={isNewWizardOpen}
         onClose={() => setIsNewWizardOpen(false)}
         onCreate={handleCreateNewTemplate}
-      />
-
-      <MobileSyncHubModal
-        isOpen={isMobileSyncOpen}
-        onClose={() => setIsMobileSyncOpen(false)}
-        templates={templates}
-        onGenerateLot={(lot) => {
-          setIsMobileSyncOpen(false);
-          const targetTemplate =
-            templates.find((t) => t.name === lot.targetTemplateId) || activeTemplate || templates[0];
-          // Convert lot items to ProductRecords
-          const lotProducts: ProductRecord[] = lot.items.map((item) => ({
-            id: item.id,
-            PRODUCT_SCAN: item.code,
-            ITEMNAME: item.designation || 'Article Scanné',
-            SELLING_PRICE: item.price || 0,
-            PROMOPRICE: item.promoPrice,
-            PARTNO: item.code,
-            STORE_NAME: 'Terminal Mobile',
-          }));
-          handleSelectTemplateToGenerate(targetTemplate, lotProducts, lot.name);
-        }}
-        onOpenInEditor={(templateName) => {
-          setIsMobileSyncOpen(false);
-          const t = templates.find((tpl) => tpl.name === templateName);
-          if (t) handleSelectTemplateToEdit(t);
-        }}
-        onOpenMobileSimulator={() => {
-          setIsMobileSyncOpen(false);
-          handleNavigate('mobile');
-        }}
       />
 
       <OmniChannelStudioModal

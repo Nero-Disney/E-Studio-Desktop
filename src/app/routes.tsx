@@ -3,7 +3,6 @@ export type AppSection =
   | 'template-editor'
   | 'generation'
   | 'catalog'
-  | 'mobile-sync'
   | 'rules-engine';
 
 export interface AppSectionMeta {
@@ -32,11 +31,6 @@ export const appSections: AppSectionMeta[] = [
     id: 'catalog',
     label: 'Catalog',
     description: 'Unified product database and data hygiene',
-  },
-  {
-    id: 'mobile-sync',
-    label: 'Mobile Sync',
-    description: 'Device intake and lot synchronization',
   },
   {
     id: 'rules-engine',

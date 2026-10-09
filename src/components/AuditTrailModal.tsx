@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { AuditLogEntry } from '../types';
-import { OfflineStorageManager } from '../utils/offlineStorage';
+import { AuditLogService } from '../services/auditLogService';
 import { History, Filter, Download, Trash2, Clock, User } from 'lucide-react';
 
 interface AuditTrailModalProps {
@@ -9,7 +9,7 @@ interface AuditTrailModalProps {
 }
 
 export const AuditTrailModal: React.FC<AuditTrailModalProps> = ({ isOpen, onClose }) => {
-  const [logs, setLogs] = useState<AuditLogEntry[]>(() => OfflineStorageManager.getAuditLogs());
+  const [logs, setLogs] = useState<AuditLogEntry[]>(() => AuditLogService.getAll());
   const [filterAction, setFilterAction] = useState<string>('all');
 
   if (!isOpen) return null;
@@ -19,7 +19,7 @@ export const AuditTrailModal: React.FC<AuditTrailModalProps> = ({ isOpen, onClos
     : logs.filter((l) => l.action.toLowerCase().includes(filterAction.toLowerCase()));
 
   const handleClearLogs = () => {
-    localStorage.removeItem('estudio_offline_audit_logs');
+    AuditLogService.clear();
     setLogs([]);
   };
 

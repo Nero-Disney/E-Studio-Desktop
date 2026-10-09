@@ -15,6 +15,7 @@ interface LabelRendererProps {
   template: LabelTemplate;
   record?: ProductRecord;
   zoom?: number; // scale: 1 = 3.78 px per mm (approx 96 DPI)
+  scale?: number; // alias for zoom
   scalePxPerMm?: number;
   showBleed?: boolean;
   showInnerMargins?: boolean;
@@ -38,7 +39,8 @@ interface LabelRendererProps {
 export const LabelRenderer: React.FC<LabelRendererProps> = ({
   template,
   record,
-  zoom = 1.0,
+  zoom,
+  scale,
   scalePxPerMm = 3.78, // 3.78 px per mm is standard screen DPI
   showBleed = true,
   showInnerMargins = true,
@@ -58,7 +60,8 @@ export const LabelRenderer: React.FC<LabelRendererProps> = ({
   className = '',
   id,
 }) => {
-  const pxPerMm = scalePxPerMm * zoom;
+  const zoomVal = zoom ?? scale ?? 1.0;
+  const pxPerMm = scalePxPerMm * zoomVal;
 
   const widthPx = template.width_mm * pxPerMm;
   const heightPx = template.height_mm * pxPerMm;
