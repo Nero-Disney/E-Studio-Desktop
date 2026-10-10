@@ -217,7 +217,6 @@ export const CatalogManagementStudio: React.FC<CatalogManagementStudioProps> = (
     catalogRepository.commitImport(imported, report, importMode);
 
     AuditLogService.append({
-      user: 'Opérateur Local',
       action: 'IMPORT_CATALOGUE',
       details: `Importation de ${imported.length} articles depuis ${importFile?.name}`,
     });

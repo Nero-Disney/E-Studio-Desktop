@@ -987,23 +987,6 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({
     pushState(next);
   };
 
-  // 30-Second Auto-Save to localStorage
-  useEffect(() => {
-    const autoSaveKey = `label_craft_autosave_${(template as any).id || template.name}`;
-    const timer = setInterval(() => {
-      try {
-        localStorage.setItem(autoSaveKey, JSON.stringify({
-          template,
-          timestamp: Date.now(),
-        }));
-      } catch (err) {
-        console.warn('Auto-save failed', err);
-      }
-    }, 30000);
-
-    return () => clearInterval(timer);
-  }, [template]);
-
   const handleSave = () => {
     onSaveTemplate(template);
     setSavedNotification(true);

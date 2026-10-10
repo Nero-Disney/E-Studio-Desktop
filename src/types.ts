@@ -381,7 +381,7 @@ export interface CustomFont {
 export interface AuditLogEntry {
   id: string;
   timestamp: string;
-  user: string;
+  user?: string;
   action: string;
   product_id?: string;
   product_name?: string;
@@ -433,10 +433,10 @@ export interface BatchSpoolConfig {
 }
 
 export interface LabelTemplate {
-  id?: string;
-  revision?: number;
-  created_at?: string;
-  updated_at?: string;
+  id: string;
+  revision: number;
+  created_at: string;
+  updated_at: string;
   schema_version: number;
   name: string;
   width_mm: number;
@@ -473,6 +473,32 @@ export interface PrintJob {
   status: PrintJobStatus;
   error: string | null;
   created_at: string;
+}
+
+export type AppView = 'home' | 'editor' | 'generation' | 'catalog';
+
+export interface TemplateSummary {
+  id: string;
+  name: string;
+  width_mm: number;
+  height_mm: number;
+  revision: number;
+  updated_at: string;
+}
+
+export interface UpsertResult {
+  inserted: number;
+  updated: number;
+  rejected: number;
+}
+
+export interface AuditRecord {
+  id: string;
+  at: string;
+  os_user: string;
+  action: string;
+  entity_id: string | null;
+  details: string;
 }
 
 export interface DomainField {

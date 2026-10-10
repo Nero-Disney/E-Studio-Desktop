@@ -1,4 +1,5 @@
 import { ProductRecord } from '../types';
+import { api } from './api';
 
 export interface ImportReport {
   id: string;
@@ -22,71 +23,34 @@ export interface WorkspaceExportData {
   templates?: any[];
 }
 
-const CATALOG_STORAGE_KEY = 'estudio_workspace_catalog_v1';
-const IMPORT_HISTORY_KEY = 'estudio_workspace_import_history_v1';
-
 class CatalogRepository {
   private products: ProductRecord[] = [];
-  private searchIndices: string[] = [];
   private listeners: Array<(products: ProductRecord[]) => void> = [];
   private importReports: ImportReport[] = [];
+  private isLoaded = false;
 
   constructor() {
-    this.loadFromStorage();
+    this.init();
   }
 
-  private loadFromStorage() {
+  public async init(): Promise<void> {
     try {
-      if (typeof window !== 'undefined') {
-        const saved = localStorage.getItem(CATALOG_STORAGE_KEY);
-        if (saved) {
-          const parsed = JSON.parse(saved);
-          if (Array.isArray(parsed)) {
-            this.products = parsed;
-          }
-        }
-        const historySaved = localStorage.getItem(IMPORT_HISTORY_KEY);
-        if (historySaved) {
-          const parsedHistory = JSON.parse(historySaved);
-          if (Array.isArray(parsedHistory)) {
-            this.importReports = parsedHistory;
-          }
-        }
+      const prods = await api.catalogSearch('');
+      this.products = prods || [];
+      const historyStr = await api.prefsGet('catalog_import_history');
+      if (historyStr) {
+        try {
+          this.importReports = JSON.parse(historyStr);
+        } catch {}
       }
+      this.isLoaded = true;
+      this.notify();
     } catch (e) {
-      console.warn('Failed to load local catalog workspace', e);
+      console.warn('Failed to load catalog from database', e);
       this.products = [];
+      this.isLoaded = true;
+      this.notify();
     }
-    this.rebuildIndex();
-  }
-
-  private saveToStorage() {
-    try {
-      if (typeof window !== 'undefined') {
-        localStorage.setItem(CATALOG_STORAGE_KEY, JSON.stringify(this.products));
-        localStorage.setItem(IMPORT_HISTORY_KEY, JSON.stringify(this.importReports.slice(0, 50)));
-      }
-    } catch (e) {
-      console.error('Failed to persist catalog workspace', e);
-    }
-    this.rebuildIndex();
-    this.notify();
-  }
-
-  private rebuildIndex() {
-    this.searchIndices = this.products.map((p) => {
-      const tokens = [
-        p.ITEMNAME,
-        p.PRODUCT_SCAN,
-        p.PARTNO,
-        p.BRAND_INFO,
-        p.VENDOR_NAME,
-        p.DEPT_NAME,
-        p.CATEGORY_NAME,
-        p.STORE_NAME,
-      ].filter(Boolean);
-      return tokens.join(' ').toLowerCase();
-    });
   }
 
   private notify() {
@@ -123,28 +87,29 @@ class CatalogRepository {
     }
 
     const words = cleanQuery.split(/\s+/).filter(Boolean);
-    const results: ProductRecord[] = [];
-
-    for (let i = 0; i < this.products.length; i++) {
-      const prod = this.products[i];
+    return this.products.filter((prod) => {
       if (department && department !== 'all') {
         const prodDept = (prod.DEPT_NAME || prod.CATEGORY_NAME || '').toLowerCase();
-        if (prodDept !== department.toLowerCase()) continue;
+        if (prodDept !== department.toLowerCase()) return false;
       }
+      if (words.length === 0) return true;
 
-      if (words.length === 0) {
-        results.push(prod);
-        continue;
-      }
+      const searchable = [
+        prod.ITEMNAME,
+        prod.PRODUCT_SCAN,
+        prod.PARTNO,
+        prod.BRAND_INFO,
+        prod.VENDOR_NAME,
+        prod.DEPT_NAME,
+        prod.CATEGORY_NAME,
+        prod.STORE_NAME,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
 
-      const index = this.searchIndices[i] || '';
-      const matchesAll = words.every((w) => index.includes(w));
-      if (matchesAll) {
-        results.push(prod);
-      }
-    }
-
-    return results;
+      return words.every((w) => searchable.includes(w));
+    });
   }
 
   public saveToMasterDatabase(
@@ -160,6 +125,7 @@ class CatalogRepository {
     if (isReplace) {
       this.products = [...incomingProducts];
       addedCount = incomingProducts.length;
+      api.catalogReplaceAll(incomingProducts).catch((err) => console.error(err));
     } else {
       const map = new Map<string, ProductRecord>();
       this.products.forEach((p) => {
@@ -181,9 +147,10 @@ class CatalogRepository {
         }
       });
       this.products = Array.from(map.values());
+      api.catalogUpsert(incomingProducts).catch((err) => console.error(err));
     }
 
-    this.saveToStorage();
+    this.notify();
     return {
       totalCount: this.products.length,
       updatedCount,
@@ -198,15 +165,13 @@ class CatalogRepository {
   ) {
     if (mode === 'replace') {
       this.products = [...importedRecords];
+      api.catalogReplaceAll(importedRecords).catch((err) => console.error(err));
     } else {
-      // Merge by PARTNO or PRODUCT_SCAN or ID
       const map = new Map<string, ProductRecord>();
-      // First populate existing
       this.products.forEach((p) => {
         const key = p.PARTNO || p.PRODUCT_SCAN || p.id;
         map.set(key, p);
       });
-      // Then merge / update with imported records preserving non-blank fields
       importedRecords.forEach((imp) => {
         const key = imp.PARTNO || imp.PRODUCT_SCAN || imp.id;
         const existing = map.get(key);
@@ -217,20 +182,24 @@ class CatalogRepository {
         }
       });
       this.products = Array.from(map.values());
+      api.catalogUpsert(importedRecords).catch((err) => console.error(err));
     }
 
     this.importReports.unshift(report);
-    this.saveToStorage();
+    api.prefsSet('catalog_import_history', JSON.stringify(this.importReports.slice(0, 50))).catch(() => {});
+    this.notify();
   }
 
   public deleteProduct(id: string) {
     this.products = this.products.filter((p) => p.id !== id);
-    this.saveToStorage();
+    api.catalogReplaceAll(this.products).catch((err) => console.error(err));
+    this.notify();
   }
 
   public clearCatalog() {
     this.products = [];
-    this.saveToStorage();
+    api.catalogReplaceAll([]).catch((err) => console.error(err));
+    this.notify();
   }
 
   public getImportReports(): ImportReport[] {
@@ -257,7 +226,9 @@ class CatalogRepository {
         if (Array.isArray(parsed.catalog.importHistory)) {
           this.importReports = parsed.catalog.importHistory;
         }
-        this.saveToStorage();
+        api.catalogReplaceAll(this.products).catch((err) => console.error(err));
+        api.prefsSet('catalog_import_history', JSON.stringify(this.importReports.slice(0, 50))).catch(() => {});
+        this.notify();
         return {
           success: true,
           message: `Espace de travail importé avec succès (${this.products.length} articles).`,
@@ -272,5 +243,4 @@ class CatalogRepository {
 }
 
 export const catalogRepository = new CatalogRepository();
-// Backward compatibility alias for parts of the app expecting databaseService
 export const databaseService = catalogRepository;

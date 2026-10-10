@@ -66,7 +66,6 @@ export const BatchSpoolerModal: React.FC<BatchSpoolerModalProps> = ({
       if (targetDestination === 'system_dialog') {
         // Real browser / desktop OS print dialogue
         AuditLogService.append({
-          user: 'Opérateur Local',
           action: 'IMPRESSION_LOT',
           template_name: template.name,
           details: `Job ${jobId}: ${products.length} étiquettes réparties en ${batches.length} lots transmises au spouleur`,
@@ -78,7 +77,6 @@ export const BatchSpoolerModal: React.FC<BatchSpoolerModalProps> = ({
       } else {
         // PDF Master Generation
         AuditLogService.append({
-          user: 'Opérateur Local',
           action: 'EXPORT_LOT_PDF',
           template_name: template.name,
           details: `Job ${jobId}: Export PDF pour ${products.length} étiquettes généré`,

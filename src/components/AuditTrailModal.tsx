@@ -12,6 +12,12 @@ export const AuditTrailModal: React.FC<AuditTrailModalProps> = ({ isOpen, onClos
   const [logs, setLogs] = useState<AuditLogEntry[]>(() => AuditLogService.getAll());
   const [filterAction, setFilterAction] = useState<string>('all');
 
+  React.useEffect(() => {
+    if (isOpen) {
+      AuditLogService.fetchAll().then((records) => setLogs(records)).catch(() => {});
+    }
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   const filteredLogs = filterAction === 'all'
