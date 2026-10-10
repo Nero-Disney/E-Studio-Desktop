@@ -12,7 +12,7 @@ import {
 import { DEVICE_PROFILES, SAMPLE_STORES } from '../rulesEngine/deviceProfiles';
 import { DEFAULT_RULES } from '../rulesEngine/defaultRules';
 import { RulesEngine } from '../rulesEngine/engine';
-import { databaseService } from '../services/databaseService';
+import { catalogRepository as databaseService } from '../services/catalogRepository';
 import {
   Cpu,
   Tv,

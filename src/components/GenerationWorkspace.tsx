@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { LabelTemplate, ProductRecord, ImpositionConfig, PdfExportConfig } from '../types';
-import { databaseService } from '../services/databaseService';
+import { catalogRepository as databaseService } from '../services/catalogRepository';
 import { LabelRenderer } from './LabelRenderer';
 import { ImpositionCalculator } from '../utils/impositionCalculator';
 import { TierEngine } from '../utils/tierEngine';

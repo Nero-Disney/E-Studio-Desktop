@@ -7,7 +7,7 @@ import {
   sanitizeBarcodeValue,
   CleaningDiagnosticReport,
 } from '../utils/excelCleaner';
-import { databaseService } from '../services/databaseService';
+import { catalogRepository as databaseService } from '../services/catalogRepository';
 import {
   FileSpreadsheet,
   Check,

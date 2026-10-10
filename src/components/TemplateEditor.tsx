@@ -10,7 +10,7 @@ import { FindReplaceModal } from './FindReplaceModal';
 import { KeyboardShortcutsModal } from './KeyboardShortcutsModal';
 import { CanvasRulers } from './CanvasRulers';
 import { FloatingRulerHUD } from './FloatingRulerHUD';
-import { databaseService } from '../services/databaseService';
+import { catalogRepository as databaseService } from '../services/catalogRepository';
 import {
   createObjectInstance,
   ElementStylePayload,

@@ -433,6 +433,10 @@ export interface BatchSpoolConfig {
 }
 
 export interface LabelTemplate {
+  id: string;
+  revision: number;
+  created_at: string;
+  updated_at: string;
   schema_version: number;
   name: string;
   width_mm: number;
@@ -454,6 +458,21 @@ export interface LabelTemplate {
   brand_aware?: BrandAwareConfig;
   default_imposition?: ImpositionConfig;
   items: TemplateItem[];
+}
+
+export type PrintJobStatus = 'draft' | 'ready' | 'sent' | 'failed';
+
+export interface PrintJob {
+  id: string;
+  template_id: string;
+  template_revision: number;
+  product_ids: string[];
+  format: 'pdf' | 'zpl';
+  imposition_json: string;
+  target: string;
+  status: PrintJobStatus;
+  error: string | null;
+  created_at: string;
 }
 
 export interface DomainField {

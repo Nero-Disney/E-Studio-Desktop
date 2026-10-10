@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { LabelTemplate, TemplateItem, ProductRecord } from '../types';
-import { databaseService } from '../services/databaseService';
+import { catalogRepository as databaseService } from '../services/catalogRepository';
 import {
   Layers,
   Database,
