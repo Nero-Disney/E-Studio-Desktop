@@ -238,6 +238,10 @@ function MainWorkspace() {
         {currentView === 'editor' && (
           <TemplateEditor
             initialTemplate={activeTemplate || {
+              id: 'tpl_default_new',
+              revision: 1,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
               schema_version: 1,
               name: 'Nouveau Gabarit',
               width_mm: 100,
@@ -258,6 +262,10 @@ function MainWorkspace() {
         {currentView === 'generation' && (
           <GenerationWorkspace
             template={activeTemplate || {
+              id: 'tpl_default_std',
+              revision: 1,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
               schema_version: 1,
               name: 'Gabarit Standard',
               width_mm: 100,

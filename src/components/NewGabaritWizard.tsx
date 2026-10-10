@@ -97,7 +97,12 @@ export const NewGabaritWizard: React.FC<NewGabaritWizardProps> = ({ isOpen, onCl
       return;
     }
 
+    const now = new Date().toISOString();
     const newTemplate: LabelTemplate = {
+      id: `tpl_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
+      revision: 1,
+      created_at: now,
+      updated_at: now,
       schema_version: 1,
       name: name.trim(),
       width_mm: widthMm,

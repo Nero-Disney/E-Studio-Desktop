@@ -29,7 +29,6 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
-    "@nanonets/graft": "^0.20.0",
     "@tailwindcss/vite": "^4.0.9",
     "@tauri-apps/cli": "^2.12.1",
     "@types/react": "^18.3.18",

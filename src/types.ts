@@ -433,10 +433,10 @@ export interface BatchSpoolConfig {
 }
 
 export interface LabelTemplate {
-  id: string;
-  revision: number;
-  created_at: string;
-  updated_at: string;
+  id?: string;
+  revision?: number;
+  created_at?: string;
+  updated_at?: string;
   schema_version: number;
   name: string;
   width_mm: number;
