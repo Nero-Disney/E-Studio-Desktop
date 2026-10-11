@@ -45,3 +45,15 @@
 - Completely purged hardcoded "Opérateur Local" strings across App.tsx, BatchSpoolerModal.tsx, and CatalogManagementStudio.tsx.
 - Zero localStorage occurrences remaining in application code; verified clean build with npx tsc --noEmit and compile_applet.
 - Acceptance: Durable SQLite storage completely replaces localStorage for all templates, catalog, rules, dictionary, audit, and prefs.
+
+## Step 5 — Native Desktop File I/O, Print Jobs & Purge Forbidden Patterns
+- Built src/services/desktopFileService.ts integrating @tauri-apps/plugin-dialog and @tauri-apps/plugin-fs for OS file operations.
+- Replaced browser downloads in TemplateEditor.tsx, CatalogManagementStudio.tsx, and HomeDashboard.tsx with native file dialog save.
+- Connected GenerationWorkspace PDF export to desktopFileService.saveBinary and registered print jobs via SQLite job_insert.
+- Wired ZPL export in zplExporter.ts and GenerationWorkspace.tsx to native text saving and print_jobs table persistence.
+- Purged all occurrences of URL.createObjectURL and <a download> across presets, workspaces, and template export routines.
+- Eliminated all alert() calls throughout App.tsx, CatalogManagementStudio, DataCleaning, Mapping, and ImpositionCalibration.
+- Removed fake direct print mechanisms, iframe printing, and forbidden window.print() calls from GenerationWorkspace.
+- Deleted unused dead code and fake progress simulators (BatchSpoolerModal.tsx and batchSpooler.ts).
+- Verified TypeScript compilation (tsc --noEmit) and applet compile with 0 errors and zero warnings.
+- Acceptance: Native desktop dialogs handle all file exports/saves, PDF/ZPL log to print_jobs in SQLite, zero forbidden patterns remain.

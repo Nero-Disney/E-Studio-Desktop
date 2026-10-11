@@ -1,5 +1,6 @@
 import { LabelTemplate, ProductRecord } from '../types';
 import { PricingEngine } from './pricingEngine';
+import { desktopFileService } from '../services/desktopFileService';
 
 export interface ZplConfig {
   dpi: 203 | 300 | 600;
@@ -137,17 +138,12 @@ export class ZplExporter {
   }
 
   /**
-   * Triggers download of the generated .zpl file
+   * Saves the generated .zpl file to local disk
    */
-  static downloadZplFile(filename: string, content: string) {
-    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = filename.endsWith('.zpl') ? filename : `${filename}.zpl`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+  static async downloadZplFile(filename: string, content: string): Promise<string | null> {
+    const finalName = filename.endsWith('.zpl') ? filename : `${filename}.zpl`;
+    return await desktopFileService.saveText(finalName, content, [
+      { name: 'Fichier ZPL', extensions: ['zpl', 'txt'] },
+    ]);
   }
 }

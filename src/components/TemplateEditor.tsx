@@ -18,6 +18,7 @@ import {
   applyElementStyle,
 } from '../models/TemplateObjectModel';
 import { sanitizeNonPriceElement } from '../utils/pricingEngine';
+import { desktopFileService } from '../services/desktopFileService';
 import {
   SmartGuideLine,
   BoxBounds,
@@ -993,15 +994,12 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({
     setTimeout(() => setSavedNotification(false), 2500);
   };
 
-  const exportJson = () => {
+  const exportJson = async () => {
     const dataStr = JSON.stringify(template, null, 2);
-    const blob = new Blob([dataStr], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${template.name.toLowerCase().replace(/\s+/g, '_')}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+    const filename = `${template.name.toLowerCase().replace(/\s+/g, '_')}.json`;
+    await desktopFileService.saveText(filename, dataStr, [
+      { name: 'Gabarit E-Studio', extensions: ['json'] },
+    ]);
   };
 
   // Keyboard Shortcuts (Undo, Redo, Copy/Paste Style, Duplicate, Nudge, Delete, Select All)

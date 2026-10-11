@@ -161,7 +161,8 @@ class CatalogRepository {
   public commitImport(
     importedRecords: ProductRecord[],
     report: ImportReport,
-    mode: 'merge_update' | 'replace' = 'merge_update'
+    mode: 'merge_update' | 'replace' | 'review_collisions' = 'merge_update',
+    skipKeys?: Set<string>
   ) {
     if (mode === 'replace') {
       this.products = [...importedRecords];
@@ -172,17 +173,23 @@ class CatalogRepository {
         const key = p.PARTNO || p.PRODUCT_SCAN || p.id;
         map.set(key, p);
       });
+      const toUpsert: ProductRecord[] = [];
       importedRecords.forEach((imp) => {
         const key = imp.PARTNO || imp.PRODUCT_SCAN || imp.id;
+        if (skipKeys && skipKeys.has(key)) {
+          // Preserve existing record, skip updating
+          return;
+        }
         const existing = map.get(key);
         if (existing) {
           map.set(key, { ...existing, ...imp });
         } else {
           map.set(key, imp);
         }
+        toUpsert.push(imp);
       });
       this.products = Array.from(map.values());
-      api.catalogUpsert(importedRecords).catch((err) => console.error(err));
+      api.catalogUpsert(toUpsert).catch((err) => console.error(err));
     }
 
     this.importReports.unshift(report);

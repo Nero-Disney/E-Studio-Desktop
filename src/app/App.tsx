@@ -333,7 +333,6 @@ function MainWorkspace() {
             templates={templates}
             onGenerateFromDatabase={(selectedItems) => {
               if (templates.length === 0) {
-                alert('Veuillez d\'abord créer un gabarit d\'étiquette avant de lancer la génération.');
                 handleNavigate('home');
                 return;
               }

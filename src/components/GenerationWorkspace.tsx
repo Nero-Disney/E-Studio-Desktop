@@ -20,7 +20,13 @@ import { MappingDictionaryModal } from './MappingDictionaryModal';
 import { ContextTooltip, useTooltip } from '../context/TooltipContext';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
+import { desktopFileService } from '../services/desktopFileService';
+import { api } from '../services/api';
+import { AuditLogService } from '../services/auditLogService';
+import { PrintJobHistoryModal } from './PrintJobHistoryModal';
+import { PreFlightEngine } from '../utils/preFlightEngine';
 import {
+  History,
   ChevronLeft,
   ChevronRight,
   Printer,
@@ -87,6 +93,7 @@ export const GenerationWorkspace: React.FC<GenerationWorkspaceProps> = ({
   >('preview');
   const [exportDropdownOpen, setExportDropdownOpen] = useState(false);
   const [isDictionaryModalOpen, setIsDictionaryModalOpen] = useState(false);
+  const [showJobHistory, setShowJobHistory] = useState(false);
 
   const handleUpdateSingleProduct = (updated: ProductRecord) => {
     setProducts((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
@@ -187,6 +194,10 @@ export const GenerationWorkspace: React.FC<GenerationWorkspaceProps> = ({
   }, [printScope, currentProduct, fillSheetWithSelected, imposition, selectedCopies, products, checkedProductIds, itemCopies, filteredProducts]);
 
   // Preflight diagnostics for rows
+  const preFlightReport = useMemo(() => {
+    return PreFlightEngine.analyzeTemplate(template, effectivePrintItems[0]);
+  }, [template, effectivePrintItems]);
+
   const diagnostics = useMemo(() => {
     return products.map((record) => {
       const issues: { type: 'warning' | 'error'; message: string }[] = [];
@@ -246,7 +257,7 @@ export const GenerationWorkspace: React.FC<GenerationWorkspaceProps> = ({
           setMappingModalOpen(true);
         }
       } catch (err) {
-        alert("Erreur lors de l'importation du fichier Excel/CSV : " + String(err));
+        console.error("Erreur lors de l'importation du fichier Excel/CSV :", err);
       }
     };
     reader.readAsArrayBuffer(file);
@@ -287,12 +298,12 @@ export const GenerationWorkspace: React.FC<GenerationWorkspaceProps> = ({
     try {
       await PptxExporter.exportToPptx(template, effectivePrintItems, imposition, impositionConfig);
     } catch (err) {
-      alert("Erreur lors de l'export PowerPoint : " + String(err));
+      console.error("Erreur lors de l'export PowerPoint :", err);
     }
   };
 
   // ZPL Direct Thermal Export
-  const handleExportZpl = () => {
+  const handleExportZpl = async () => {
     try {
       const zplContent = ZplExporter.generateBatchZpl(template, effectivePrintItems, {
         dpi: zplDpi,
@@ -302,10 +313,29 @@ export const GenerationWorkspace: React.FC<GenerationWorkspaceProps> = ({
         includeComments: true,
       });
       const filename = `thermique_${template.name.toLowerCase().replace(/\s+/g, '_')}_${zplDpi}dpi.zpl`;
-      ZplExporter.downloadZplFile(filename, zplContent);
+      const savedPath = await ZplExporter.downloadZplFile(filename, zplContent);
+      if (savedPath) {
+        await api.jobInsert({
+          id: `job_zpl_${Date.now()}`,
+          template_id: template.id || '',
+          template_revision: template.revision || 1,
+          product_ids: effectivePrintItems.map((p) => p.id || ''),
+          format: 'zpl',
+          imposition_json: JSON.stringify(impositionConfig),
+          target: savedPath,
+          status: 'ready',
+          error: null,
+          created_at: new Date().toISOString(),
+        });
+        AuditLogService.append({
+          action: 'EXPORT_ZPL',
+          template_name: template.name,
+          details: `Fichier ZPL enregistré : ${savedPath} (${effectivePrintItems.length} étiquettes, ${zplDpi} DPI)`,
+        });
+      }
       setShowZplModal(false);
     } catch (err) {
-      alert("Erreur lors de la génération ZPL : " + String(err));
+      console.error("Erreur lors de la génération ZPL :", err);
     }
   };
 
@@ -590,45 +620,35 @@ export const GenerationWorkspace: React.FC<GenerationWorkspaceProps> = ({
     return doc;
   };
 
-  // Generate and download Imposed PDF
-  const handleGeneratePdf = () => {
-    const doc = buildPdfDocument();
-    if (doc) {
-      doc.save(`etiquettes_imposees_${template.name.toLowerCase().replace(/\s+/g, '_')}.pdf`);
-    }
-  };
-
-  // Direct Print to Physical Printer via iframe/blob
-  const handleDirectPrint = () => {
+  // Generate and save Imposed PDF via native OS dialog
+  const handleGeneratePdf = async () => {
     const doc = buildPdfDocument();
     if (!doc) return;
-
-    try {
-      const blob = doc.output('blob');
-      const blobUrl = URL.createObjectURL(blob);
-
-      // Create hidden iframe to trigger native browser/physical print dialog
-      const printIframe = document.createElement('iframe');
-      printIframe.style.position = 'fixed';
-      printIframe.style.right = '0';
-      printIframe.style.bottom = '0';
-      printIframe.style.width = '0';
-      printIframe.style.height = '0';
-      printIframe.style.border = '0';
-      printIframe.src = blobUrl;
-
-      printIframe.onload = () => {
-        try {
-          printIframe.contentWindow?.focus();
-          printIframe.contentWindow?.print();
-        } catch {
-          window.open(blobUrl, '_blank');
-        }
-      };
-
-      document.body.appendChild(printIframe);
-    } catch {
-      window.print();
+    const arrayBuffer = doc.output('arraybuffer');
+    const filename = `etiquettes_imposees_${template.name.toLowerCase().replace(/\s+/g, '_')}.pdf`;
+    const savedPath = await desktopFileService.saveBinary(
+      filename,
+      new Uint8Array(arrayBuffer),
+      [{ name: 'Document PDF', extensions: ['pdf'] }]
+    );
+    if (savedPath) {
+      await api.jobInsert({
+        id: `job_pdf_${Date.now()}`,
+        template_id: template.id || '',
+        template_revision: template.revision || 1,
+        product_ids: effectivePrintItems.map((p) => p.id || ''),
+        format: 'pdf',
+        imposition_json: JSON.stringify(impositionConfig),
+        target: savedPath,
+        status: 'ready',
+        error: null,
+        created_at: new Date().toISOString(),
+      });
+      AuditLogService.append({
+        action: 'EXPORT_PDF_IMPOSITION',
+        template_name: template.name,
+        details: `Planche PDF enregistrée : ${savedPath} (${effectivePrintItems.length} étiquettes)`,
+      });
     }
   };
 
@@ -762,19 +782,14 @@ export const GenerationWorkspace: React.FC<GenerationWorkspaceProps> = ({
               )}
             </div>
 
-            <ContextTooltip
-              title="Impression Directe Navigateur"
-              content="Envoyer directement la planche d'étiquettes vers l'imprimante laser ou thermique par défaut"
-              category="Production"
+            <button
+              onClick={() => setShowJobHistory(true)}
+              className="px-3 py-1.5 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 text-xs font-semibold rounded-lg flex items-center gap-1.5 shadow-2xs transition"
+              title="Consulter l'historique des travaux d'impression et le spooler SQLite"
             >
-              <button
-                onClick={handleDirectPrint}
-                className="px-3 py-1.5 bg-slate-800 hover:bg-slate-900 text-white text-xs font-semibold rounded-lg flex items-center gap-1.5 shadow-2xs transition"
-              >
-                <Printer className="w-3.5 h-3.5 text-white" />
-                <span>Imprimer Direct</span>
-              </button>
-            </ContextTooltip>
+              <History className="w-3.5 h-3.5 text-purple-600" />
+              <span>Spooler SQLite</span>
+            </button>
 
             <ContextTooltip
               title="Télécharger Planche PDF HD"
@@ -940,8 +955,29 @@ export const GenerationWorkspace: React.FC<GenerationWorkspaceProps> = ({
             </div>
           </div>
 
-          <div className="text-[11px] text-slate-400 font-mono hidden lg:block">
-            Workflow E-Studio v2.4 • Prêt pour l'impression
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold border bg-white shadow-2xs">
+              <span className="text-slate-400">Pré-presse :</span>
+              {preFlightReport.status === 'ready' ? (
+                <span className="text-emerald-600 flex items-center gap-1">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <span>Conforme (300 DPI)</span>
+                </span>
+              ) : preFlightReport.status === 'warning' ? (
+                <span className="text-amber-600 flex items-center gap-1" title={preFlightReport.issues.map((i) => i.message).join('\n')}>
+                  <AlertTriangle className="w-3.5 h-3.5" />
+                  <span>{preFlightReport.warningsCount} avertissement(s)</span>
+                </span>
+              ) : (
+                <span className="text-red-600 flex items-center gap-1" title={preFlightReport.issues.map((i) => i.message).join('\n')}>
+                  <AlertCircle className="w-3.5 h-3.5" />
+                  <span>{preFlightReport.errorsCount} erreur(s)</span>
+                </span>
+              )}
+            </div>
+            <div className="text-[11px] text-slate-400 font-mono hidden lg:block">
+              Workflow E-Studio • Planche {template.name}
+            </div>
           </div>
         </div>
       </header>
@@ -1173,13 +1209,13 @@ export const GenerationWorkspace: React.FC<GenerationWorkspaceProps> = ({
                   <button
                     onClick={() => {
                       setPrintScope('selected_only');
-                      handleDirectPrint();
+                      handleGeneratePdf();
                     }}
                     className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-2xs transition"
-                    title="Imprimer directement cet article sélectionné"
+                    title="Générer le PDF pour cet article sélectionné"
                   >
-                    <Printer className="w-3.5 h-3.5" />
-                    <span>Imprimer cet article</span>
+                    <FileText className="w-3.5 h-3.5" />
+                    <span>PDF cet article</span>
                   </button>
                 </div>
               )}
@@ -1381,9 +1417,9 @@ export const GenerationWorkspace: React.FC<GenerationWorkspaceProps> = ({
               </div>
               <button
                 type="button"
-                onClick={() => {
+                onClick={async () => {
                   template.default_imposition = impositionConfig;
-                  alert('La disposition de planche et les espacements ont été enregistrés dans le gabarit actuel.');
+                  await api.templateSave(template);
                 }}
                 className="w-full py-1.5 bg-slate-100 hover:bg-slate-200 border border-slate-300 text-slate-700 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition"
               >
@@ -1892,6 +1928,11 @@ export const GenerationWorkspace: React.FC<GenerationWorkspaceProps> = ({
           </div>
         </div>
       )}
+
+      <PrintJobHistoryModal
+        isOpen={showJobHistory}
+        onClose={() => setShowJobHistory(false)}
+      />
     </div>
   );
 };

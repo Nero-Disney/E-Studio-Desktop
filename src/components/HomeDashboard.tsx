@@ -16,7 +16,11 @@ import {
   FileSpreadsheet,
   Cpu,
   Database,
+  History,
 } from 'lucide-react';
+import { desktopFileService } from '../services/desktopFileService';
+import { PrintJobHistoryModal } from './PrintJobHistoryModal';
+import { PreFlightEngine } from '../utils/preFlightEngine';
 
 interface HomeDashboardProps {
   templates: LabelTemplate[];
@@ -87,6 +91,9 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
     t.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  const [importError, setImportError] = useState<string | null>(null);
+  const [showJobHistory, setShowJobHistory] = useState(false);
+
   const handleImportFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -95,25 +102,25 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
       try {
         const json = JSON.parse(event.target?.result as string);
         if (json && json.name && json.width_mm && json.height_mm) {
+          setImportError(null);
           onImportTemplate(json);
         } else {
-          alert('Fichier JSON de gabarit invalide (propriétés manquantes).');
+          setImportError('Fichier JSON de gabarit invalide (propriétés manquantes).');
         }
       } catch (err) {
-        alert('Erreur lors de la lecture du fichier JSON: ' + String(err));
+        setImportError('Erreur lors de la lecture du fichier JSON: ' + String(err));
       }
     };
     reader.readAsText(file);
+    e.target.value = '';
   };
 
-  const handleExportTemplate = (template: LabelTemplate) => {
-    const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(template, null, 2));
-    const downloadAnchor = document.createElement('a');
-    downloadAnchor.setAttribute('href', dataStr);
-    downloadAnchor.setAttribute('download', `gabarit_${template.name.replace(/\s+/g, '_')}.json`);
-    document.body.appendChild(downloadAnchor);
-    downloadAnchor.click();
-    downloadAnchor.remove();
+  const handleExportTemplate = async (template: LabelTemplate) => {
+    const dataStr = JSON.stringify(template, null, 2);
+    const filename = `gabarit_${template.name.replace(/\s+/g, '_')}.json`;
+    await desktopFileService.saveText(filename, dataStr, [
+      { name: 'Gabarit E-Studio', extensions: ['json'] },
+    ]);
   };
 
   return (
@@ -141,6 +148,15 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
             >
               <FileSpreadsheet className="w-4 h-4" />
               <span>Catalogue & Import</span>
+            </button>
+
+            <button
+              onClick={() => setShowJobHistory(true)}
+              className="px-3 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-semibold rounded-xl flex items-center gap-1.5 transition"
+              title="Consulter l'historique des travaux d'impression et le spooler SQLite"
+            >
+              <History className="w-3.5 h-3.5 text-purple-400" />
+              <span>Spooler</span>
             </button>
 
             <button
@@ -274,12 +290,23 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                     </h3>
                   </div>
 
-                  {/* Dimensions badge */}
-                  <div className="flex items-center gap-2 mb-4 text-[11px] font-mono text-slate-400">
+                  {/* Dimensions & Computed Status */}
+                  <div className="flex items-center justify-between mb-4 text-[11px] font-mono text-slate-400">
                     <span className="px-2 py-0.5 rounded bg-slate-950 border border-slate-800">
                       {template.width_mm} × {template.height_mm} mm
                     </span>
-                    <span>{template.items?.length || 0} éléments</span>
+                    <div className="flex items-center gap-1.5 font-sans">
+                      {(() => {
+                        const status = PreFlightEngine.computeTemplateStatus(template);
+                        if (status === 'ready') {
+                          return <span className="text-emerald-400 font-semibold text-[11px]">● Prêt</span>;
+                        }
+                        if (status === 'warning') {
+                          return <span className="text-amber-400 font-semibold text-[11px]">● À vérifier</span>;
+                        }
+                        return <span className="text-slate-500 font-semibold text-[11px]">● Brouillon</span>;
+                      })()}
+                    </div>
                   </div>
 
                   {/* Mini Preview Box */}
@@ -342,6 +369,11 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
           </div>
         )}
       </div>
+
+      <PrintJobHistoryModal
+        isOpen={showJobHistory}
+        onClose={() => setShowJobHistory(false)}
+      />
     </div>
   );
 };

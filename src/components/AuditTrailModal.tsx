@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { AuditLogEntry } from '../types';
 import { AuditLogService } from '../services/auditLogService';
+import { desktopFileService } from '../services/desktopFileService';
 import { History, Filter, Download, Trash2, Clock, User } from 'lucide-react';
 
 interface AuditTrailModalProps {
@@ -29,14 +30,12 @@ export const AuditTrailModal: React.FC<AuditTrailModalProps> = ({ isOpen, onClos
     setLogs([]);
   };
 
-  const handleExportLogs = () => {
-    const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(logs, null, 2));
-    const downloadAnchor = document.createElement('a');
-    downloadAnchor.setAttribute('href', dataStr);
-    downloadAnchor.setAttribute('download', `journal_audit_etiquettes_${Date.now()}.json`);
-    document.body.appendChild(downloadAnchor);
-    downloadAnchor.click();
-    downloadAnchor.remove();
+  const handleExportLogs = async () => {
+    const dataStr = JSON.stringify(logs, null, 2);
+    const filename = `journal_audit_etiquettes_${Date.now()}.json`;
+    await desktopFileService.saveText(filename, dataStr, [
+      { name: 'Journal d\'Audit', extensions: ['json'] },
+    ]);
   };
 
   return (

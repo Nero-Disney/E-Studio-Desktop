@@ -23,6 +23,17 @@ import {
   FolderArchive,
   Eye,
 } from 'lucide-react';
+import { desktopFileService } from '../services/desktopFileService';
+
+export interface CollisionItem {
+  id: string;
+  key: string;
+  existingName: string;
+  existingPrice: number;
+  incomingName: string;
+  incomingPrice: number;
+  overwrite: boolean;
+}
 
 interface CatalogManagementStudioProps {
   onBack: () => void;
@@ -46,9 +57,11 @@ export const CatalogManagementStudio: React.FC<CatalogManagementStudioProps> = (
   const [parsedHeaders, setParsedHeaders] = useState<string[]>([]);
   const [parsedRows, setParsedRows] = useState<any[]>([]);
   const [fieldMappings, setFieldMappings] = useState<Record<string, string>>({});
-  const [importMode, setImportMode] = useState<'merge_update' | 'replace'>('merge_update');
+  const [importMode, setImportMode] = useState<'merge_update' | 'replace' | 'review_collisions'>('merge_update');
   const [wizardStep, setWizardStep] = useState<1 | 2 | 3>(1);
   const [validationIssues, setValidationIssues] = useState<string[]>([]);
+  const [collisions, setCollisions] = useState<CollisionItem[]>([]);
+  const [actionFeedback, setActionFeedback] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const restoreInputRef = useRef<HTMLInputElement>(null);
@@ -103,7 +116,7 @@ export const CatalogManagementStudio: React.FC<CatalogManagementStudioProps> = (
         const json = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
 
         if (json.length === 0) {
-          alert('Le fichier sélectionné est vide.');
+          setActionFeedback('Le fichier sélectionné est vide.');
           return;
         }
 
@@ -136,7 +149,7 @@ export const CatalogManagementStudio: React.FC<CatalogManagementStudioProps> = (
         setFieldMappings(autoMap);
         setWizardStep(2);
       } catch (err: any) {
-        alert(`Erreur lors de la lecture du fichier : ${err.message || 'Format non supporté'}`);
+        setActionFeedback(`Erreur lors de la lecture du fichier : ${err.message || 'Format non supporté'}`);
       }
     };
     reader.readAsArrayBuffer(file);
@@ -144,7 +157,7 @@ export const CatalogManagementStudio: React.FC<CatalogManagementStudioProps> = (
 
   const handleValidateImport = () => {
     if (!fieldMappings['ITEMNAME']) {
-      alert('Veuillez au minimum mapper la colonne de Désignation (Nom de l\'article).');
+      setActionFeedback('Veuillez au minimum mapper la colonne de Désignation (Nom de l\'article).');
       return;
     }
 
@@ -152,6 +165,15 @@ export const CatalogManagementStudio: React.FC<CatalogManagementStudioProps> = (
     const nameColIdx = parsedHeaders.indexOf(fieldMappings['ITEMNAME']);
     const scanColIdx = parsedHeaders.indexOf(fieldMappings['PRODUCT_SCAN'] || '');
     const priceColIdx = parsedHeaders.indexOf(fieldMappings['SELLING_PRICE'] || '');
+    const partNoColIdx = parsedHeaders.indexOf(fieldMappings['PARTNO'] || '');
+
+    const detectedCollisions: CollisionItem[] = [];
+    const scanMap = new Map<string, ProductRecord>();
+    const partMap = new Map<string, ProductRecord>();
+    products.forEach((p) => {
+      if (p.PRODUCT_SCAN) scanMap.set(p.PRODUCT_SCAN.trim(), p);
+      if (p.PARTNO) partMap.set(p.PARTNO.trim(), p);
+    });
 
     parsedRows.forEach((row, i) => {
       const name = row[nameColIdx];
@@ -162,8 +184,27 @@ export const CatalogManagementStudio: React.FC<CatalogManagementStudioProps> = (
           issues.push(`Ligne ${i + 2}: Prix invalide "${rawPrice}"`);
         }
       }
+
+      const barcode = scanColIdx >= 0 ? String(row[scanColIdx] || '').trim() : '';
+      const partNo = partNoColIdx >= 0 ? String(row[partNoColIdx] || '').trim() : '';
+      const match = (barcode && scanMap.get(barcode)) || (partNo && partMap.get(partNo));
+      if (match) {
+        const rawPrice = priceColIdx >= 0 ? row[priceColIdx] : 0;
+        const parsedPrice = rawPrice ? Number(String(rawPrice).replace(',', '.')) : 0;
+        const key = barcode || partNo || match.id;
+        detectedCollisions.push({
+          id: match.id,
+          key,
+          existingName: match.ITEMNAME,
+          existingPrice: match.SELLING_PRICE,
+          incomingName: String(name || '').trim(),
+          incomingPrice: isNaN(parsedPrice) ? 0 : parsedPrice,
+          overwrite: true,
+        });
+      }
     });
 
+    setCollisions(detectedCollisions);
     setValidationIssues(issues);
     setWizardStep(3);
   };
@@ -210,15 +251,24 @@ export const CatalogManagementStudio: React.FC<CatalogManagementStudioProps> = (
       importedCount: imported.length,
       updatedCount: 0,
       rejectedCount: parsedRows.length - imported.length,
-      duplicateCount: 0,
+      duplicateCount: collisions.length,
       warnings: validationIssues.slice(0, 10),
     };
 
-    catalogRepository.commitImport(imported, report, importMode);
+    const skipKeys = new Set<string>();
+    if (importMode === 'review_collisions') {
+      collisions.forEach((c) => {
+        if (!c.overwrite) {
+          skipKeys.add(c.key);
+        }
+      });
+    }
+
+    catalogRepository.commitImport(imported, report, importMode, skipKeys);
 
     AuditLogService.append({
       action: 'IMPORT_CATALOGUE',
-      details: `Importation de ${imported.length} articles depuis ${importFile?.name}`,
+      details: `Importation de ${imported.length} articles depuis ${importFile?.name} (mode: ${importMode})`,
     });
 
     // Reset wizard
@@ -229,15 +279,12 @@ export const CatalogManagementStudio: React.FC<CatalogManagementStudioProps> = (
     setActiveTab('catalog');
   };
 
-  const handleExportWorkspace = () => {
+  const handleExportWorkspace = async () => {
     const jsonStr = catalogRepository.exportWorkspaceJson();
-    const blob = new Blob([jsonStr], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `estudio_catalogue_workspace_${Date.now()}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+    const filename = `estudio_catalogue_workspace_${Date.now()}.json`;
+    await desktopFileService.saveText(filename, jsonStr, [
+      { name: 'Catalogue E-Studio', extensions: ['json'] },
+    ]);
   };
 
   const handleRestoreWorkspaceFile = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -246,9 +293,10 @@ export const CatalogManagementStudio: React.FC<CatalogManagementStudioProps> = (
     const reader = new FileReader();
     reader.onload = (event) => {
       const res = catalogRepository.importWorkspaceJson(event.target?.result as string);
-      alert(res.message);
+      setActionFeedback(res.message);
     };
     reader.readAsText(file);
+    e.target.value = '';
   };
 
   return (
@@ -607,7 +655,7 @@ export const CatalogManagementStudio: React.FC<CatalogManagementStudioProps> = (
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-slate-400">Mode d'intégration :</span>
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-3 flex-wrap">
                         <label className="flex items-center gap-1.5 cursor-pointer">
                           <input
                             type="radio"
@@ -624,10 +672,75 @@ export const CatalogManagementStudio: React.FC<CatalogManagementStudioProps> = (
                             checked={importMode === 'replace'}
                             onChange={() => setImportMode('replace')}
                           />
-                          <span>Remplacer tout le catalogue</span>
+                          <span>Remplacer tout</span>
+                        </label>
+                        <label className="flex items-center gap-1.5 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="mergeMode"
+                            checked={importMode === 'review_collisions'}
+                            onChange={() => setImportMode('review_collisions')}
+                          />
+                          <span>Examiner les collisions ({collisions.length})</span>
                         </label>
                       </div>
                     </div>
+
+                    {importMode === 'review_collisions' && collisions.length > 0 && (
+                      <div className="bg-slate-950 border border-slate-800 rounded-xl p-3 space-y-2">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="font-bold text-white">Résolution des {collisions.length} collisions détectées</span>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setCollisions((prev) => prev.map((c) => ({ ...c, overwrite: true })))}
+                              className="text-blue-400 hover:text-blue-300 font-semibold"
+                            >
+                              Tout écraser
+                            </button>
+                            <span className="text-slate-600">·</span>
+                            <button
+                              type="button"
+                              onClick={() => setCollisions((prev) => prev.map((c) => ({ ...c, overwrite: false })))}
+                              className="text-slate-400 hover:text-white"
+                            >
+                              Tout conserver
+                            </button>
+                          </div>
+                        </div>
+                        <div className="max-h-40 overflow-y-auto divide-y divide-slate-800/80 text-xs">
+                          {collisions.map((col, idx) => (
+                            <div key={idx} className="py-2 flex items-center justify-between gap-4">
+                              <div className="min-w-0">
+                                <span className="font-mono text-slate-400 text-[11px] block">{col.key}</span>
+                                <span className="text-slate-300 truncate block">
+                                  {col.existingName} → <strong className="text-white">{col.incomingName}</strong>
+                                </span>
+                                <span className="text-slate-500 text-[11px]">
+                                  {col.existingPrice.toFixed(2)} € → {col.incomingPrice.toFixed(2)} €
+                                </span>
+                              </div>
+                              <label className="flex items-center gap-1.5 cursor-pointer shrink-0">
+                                <input
+                                  type="checkbox"
+                                  checked={col.overwrite}
+                                  onChange={(e) => {
+                                    const checked = e.target.checked;
+                                    setCollisions((prev) =>
+                                      prev.map((c, i) => (i === idx ? { ...c, overwrite: checked } : c))
+                                    );
+                                  }}
+                                  className="rounded"
+                                />
+                                <span className={col.overwrite ? 'text-blue-400 font-semibold' : 'text-slate-400'}>
+                                  {col.overwrite ? 'Écraser' : 'Conserver'}
+                                </span>
+                              </label>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
 
                     {validationIssues.length > 0 && (
                       <div className="bg-amber-950/30 border border-amber-800/50 p-3 rounded-lg text-amber-300">
