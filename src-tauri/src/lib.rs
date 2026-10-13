@@ -35,6 +35,8 @@ pub fn run() {
             commands::audit_list,
             commands::prefs_get,
             commands::prefs_set,
+            commands::batch_import_record,
+            commands::batch_import_list,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

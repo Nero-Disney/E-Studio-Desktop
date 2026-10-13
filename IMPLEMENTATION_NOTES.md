@@ -57,3 +57,14 @@
 - Deleted unused dead code and fake progress simulators (BatchSpoolerModal.tsx and batchSpooler.ts).
 - Verified TypeScript compilation (tsc --noEmit) and applet compile with 0 errors and zero warnings.
 - Acceptance: Native desktop dialogs handle all file exports/saves, PDF/ZPL log to print_jobs in SQLite, zero forbidden patterns remain.
+
+## Step 6 — Catalog Pipeline, Pre-Flight Engine & Job Manager
+- Added `batch_import_record` and `batch_import_list` Tauri commands in Rust (`src-tauri/src/commands.rs`, `src-tauri/src/lib.rs`) and API bridge (`src/services/api.ts`) saving to SQLite `import_batches` table.
+- Upgraded `src/services/catalogRepository.ts` to persist and load import reports to/from SQLite `import_batches` with in-memory fallback.
+- Wired catalog ingestion pipeline in `CatalogManagementStudio.tsx` supporting native file picker via `desktopFileService.openBinary`, header auto-mapping via persistent `mappingDictionaryManager`, and tri-mode conflict handling (`Merge & Update`, `Full Replace`, `Interactive Collision Review`).
+- Integrated `PreFlightEngine` (`src/utils/preFlightEngine.ts`) with live computed template status (`ready`, `warning`, `draft`) without stored status strings in template records.
+- Added live Pre-Flight status badge and inspection modal in `TemplateEditor.tsx` with one-click canvas element targeting and boundary issue reporting.
+- Added Two-Tier Pre-Export Quality Verification modal in `GenerationWorkspace.tsx` displaying label count, sheet count, target filename, and pre-flight health before spooling PDF or ZPL files.
+- Connected `PrintJobHistoryModal.tsx` for spool inspection, status updates (`ready`, `sent`, `failed`), and native file re-exports.
+- Verified TypeScript compilation (`npx tsc --noEmit`) and applet compilation with 0 errors and zero warnings.
+- Acceptance: Catalog pipeline, pre-flight verification engine, and print job history manager fully operational.

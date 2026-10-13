@@ -37,11 +37,33 @@ class CatalogRepository {
     try {
       const prods = await api.catalogSearch('');
       this.products = prods || [];
-      const historyStr = await api.prefsGet('catalog_import_history');
-      if (historyStr) {
-        try {
-          this.importReports = JSON.parse(historyStr);
-        } catch {}
+      try {
+        const batches = await api.batchImportList();
+        if (batches && batches.length > 0) {
+          this.importReports = batches.map((b: any) => ({
+            id: b.id || `batch_${Date.now()}`,
+            timestamp: b.timestamp || b.created_at || new Date().toISOString(),
+            filename: b.filename || 'import',
+            totalRowsRead: b.totalRowsRead ?? b.total_rows ?? 0,
+            importedCount: b.importedCount ?? b.imported_count ?? 0,
+            updatedCount: b.updatedCount ?? b.updated_count ?? 0,
+            rejectedCount: b.rejectedCount ?? b.rejected_count ?? 0,
+            duplicateCount: b.duplicateCount ?? b.duplicate_count ?? 0,
+            warnings: b.warnings || [],
+          }));
+        } else {
+          const historyStr = await api.prefsGet('catalog_import_history');
+          if (historyStr) {
+            this.importReports = JSON.parse(historyStr);
+          }
+        }
+      } catch {
+        const historyStr = await api.prefsGet('catalog_import_history');
+        if (historyStr) {
+          try {
+            this.importReports = JSON.parse(historyStr);
+          } catch {}
+        }
       }
       this.isLoaded = true;
       this.notify();
@@ -193,6 +215,7 @@ class CatalogRepository {
     }
 
     this.importReports.unshift(report);
+    api.batchImportRecord(report.id, report.filename, JSON.stringify(report)).catch(() => {});
     api.prefsSet('catalog_import_history', JSON.stringify(this.importReports.slice(0, 50))).catch(() => {});
     this.notify();
   }

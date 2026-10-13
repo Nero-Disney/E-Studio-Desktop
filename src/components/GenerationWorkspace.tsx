@@ -38,7 +38,9 @@ import {
   FileSpreadsheet,
   Grid,
   Eye,
+  CheckCircle,
   CheckCircle2,
+  FileCheck,
   AlertTriangle,
   AlertCircle,
   FileText,
@@ -94,6 +96,7 @@ export const GenerationWorkspace: React.FC<GenerationWorkspaceProps> = ({
   const [exportDropdownOpen, setExportDropdownOpen] = useState(false);
   const [isDictionaryModalOpen, setIsDictionaryModalOpen] = useState(false);
   const [showJobHistory, setShowJobHistory] = useState(false);
+  const [exportConfirmTarget, setExportConfirmTarget] = useState<'pdf' | 'zpl' | null>(null);
 
   const handleUpdateSingleProduct = (updated: ProductRecord) => {
     setProducts((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
@@ -797,7 +800,7 @@ export const GenerationWorkspace: React.FC<GenerationWorkspaceProps> = ({
               category="Production"
             >
               <button
-                onClick={handleGeneratePdf}
+                onClick={() => setExportConfirmTarget('pdf')}
                 className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg flex items-center gap-1.5 shadow-xs transition"
               >
                 <Download className="w-3.5 h-3.5" />
@@ -1918,11 +1921,154 @@ export const GenerationWorkspace: React.FC<GenerationWorkspaceProps> = ({
               </button>
               <button
                 type="button"
-                onClick={handleExportZpl}
+                onClick={() => {
+                  setShowZplModal(false);
+                  setExportConfirmTarget('zpl');
+                }}
                 className="px-4 py-1.5 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg shadow-xs flex items-center gap-1.5 transition"
               >
                 <Download className="w-3.5 h-3.5" />
                 <span>Télécharger fichier .ZPL</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Two-Tier Pre-Export Quality Verification & Confirmation Summary Modal */}
+      {exportConfirmTarget && (
+        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl max-w-lg w-full flex flex-col max-h-[85vh] overflow-hidden text-slate-100 font-sans">
+            <div className="px-5 py-4 border-b border-slate-800 flex items-center justify-between bg-slate-950">
+              <div className="flex items-center gap-2.5">
+                <div
+                  className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+                    preFlightReport.status === 'ready'
+                      ? 'bg-emerald-950 text-emerald-400 border border-emerald-800'
+                      : preFlightReport.status === 'warning'
+                      ? 'bg-amber-950 text-amber-400 border border-amber-800'
+                      : 'bg-rose-950 text-rose-400 border border-rose-800'
+                  }`}
+                >
+                  <FileCheck className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white">Vérification Pré-Vol & Confirmation d'Export</h3>
+                  <p className="text-[11px] text-slate-400">Contrôle qualité avant génération du fichier</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setExportConfirmTarget(null)}
+                className="p-1 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg text-sm"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-5 overflow-y-auto space-y-4 text-xs">
+              {/* Export Parameters Summary */}
+              <div className="bg-slate-950 border border-slate-800 p-4 rounded-xl space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-400">Format d'exportation :</span>
+                  <span className="font-bold text-white uppercase font-mono">
+                    {exportConfirmTarget === 'pdf' ? 'PDF (Planches multi-poses HD)' : 'ZPL (Thermique direct)'}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-400">Nombre d'étiquettes :</span>
+                  <span className="font-bold text-white font-mono">{effectivePrintItems.length} article(s)</span>
+                </div>
+                {exportConfirmTarget === 'pdf' && imposition && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400">Nombre de planches / feuilles :</span>
+                    <span className="font-bold text-white font-mono">
+                      {Math.ceil(effectivePrintItems.length / Math.max(1, imposition.total_per_page))} feuille(s) ({imposition.cols}×{imposition.rows} poses)
+                    </span>
+                  </div>
+                )}
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-400">Nom de fichier cible :</span>
+                  <span className="font-mono text-blue-400 text-[11px] truncate max-w-xs">
+                    {exportConfirmTarget === 'pdf'
+                      ? `etiquettes_imposees_${template.name.toLowerCase().replace(/\s+/g, '_')}.pdf`
+                      : `thermique_${template.name.toLowerCase().replace(/\s+/g, '_')}_${zplDpi}dpi.zpl`}
+                  </span>
+                </div>
+              </div>
+
+              {/* Quality Verification Status */}
+              <div className="space-y-2">
+                <span className="text-[11px] font-bold text-slate-400 block uppercase font-mono">
+                  Résultats des Contrôles Pré-Vol
+                </span>
+                {preFlightReport.status === 'ready' ? (
+                  <div className="bg-emerald-950/30 border border-emerald-800/50 p-3.5 rounded-xl flex items-center gap-2.5 text-emerald-300">
+                    <CheckCircle className="w-5 h-5 text-emerald-400 shrink-0" />
+                    <div>
+                      <p className="font-bold text-xs text-white">Gabarit 100% Conforme</p>
+                      <p className="text-[11px] text-emerald-200/80">
+                        Marges sécurisées respectées, champs de prix conformes et codes-barres valides.
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <div
+                      className={`p-3 rounded-xl border flex items-center gap-2 text-xs font-semibold ${
+                        preFlightReport.status === 'warning'
+                          ? 'bg-amber-950/40 border-amber-800 text-amber-300'
+                          : 'bg-rose-950/40 border-rose-800 text-rose-300'
+                      }`}
+                    >
+                      <AlertTriangle className="w-4 h-4 shrink-0" />
+                      <span>
+                        {preFlightReport.errorsCount > 0
+                          ? `${preFlightReport.errorsCount} erreur(s) et ${preFlightReport.warningsCount} avertissement(s) détecté(s)`
+                          : `${preFlightReport.warningsCount} avertissement(s) de mise en page détecté(s)`}
+                      </span>
+                    </div>
+                    <div className="max-h-32 overflow-y-auto space-y-1.5 bg-slate-950 border border-slate-800 p-2.5 rounded-xl">
+                      {preFlightReport.issues.map((issue) => (
+                        <div key={issue.id} className="text-[11px] flex items-start gap-2 text-slate-300">
+                          <span
+                            className={`px-1 py-0.2 rounded text-[9px] font-mono font-bold uppercase shrink-0 mt-0.5 ${
+                              issue.severity === 'error' ? 'bg-rose-900 text-rose-200' : 'bg-amber-900 text-amber-200'
+                            }`}
+                          >
+                            {issue.severity}
+                          </span>
+                          <span className="leading-tight">{issue.message}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="px-5 py-3 border-t border-slate-800 bg-slate-950 flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => setExportConfirmTarget(null)}
+                className="px-4 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-semibold"
+              >
+                Annuler
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const target = exportConfirmTarget;
+                  setExportConfirmTarget(null);
+                  if (target === 'pdf') {
+                    handleGeneratePdf();
+                  } else if (target === 'zpl') {
+                    handleExportZpl();
+                  }
+                }}
+                className="px-5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold flex items-center gap-2 shadow-xs transition"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Confirmer et Enregistrer</span>
               </button>
             </div>
           </div>

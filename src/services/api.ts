@@ -19,6 +19,7 @@ const inMemoryStore = {
   jobs: new Map<string, PrintJob>(),
   audit: [] as AuditRecord[],
   kv: new Map<string, string>(),
+  importBatches: [] as any[],
 };
 
 export const api = {
@@ -189,5 +190,36 @@ export const api = {
       return;
     }
     inMemoryStore.kv.set(key, value);
+  },
+
+  async batchImportRecord(id: string, filename: string, reportJson: string): Promise<void> {
+    if (isTauriEnvironment()) {
+      await invoke('batch_import_record', { id, filename, report_json: reportJson });
+      return;
+    }
+    try {
+      const parsed = JSON.parse(reportJson);
+      inMemoryStore.importBatches.unshift({
+        id,
+        filename,
+        report_json: reportJson,
+        created_at: new Date().toISOString(),
+        ...parsed,
+      });
+    } catch {
+      inMemoryStore.importBatches.unshift({
+        id,
+        filename,
+        report_json: reportJson,
+        created_at: new Date().toISOString(),
+      });
+    }
+  },
+
+  async batchImportList(): Promise<any[]> {
+    if (isTauriEnvironment()) {
+      return await invoke<any[]>('batch_import_list');
+    }
+    return [...inMemoryStore.importBatches];
   },
 };

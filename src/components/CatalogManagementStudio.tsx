@@ -24,6 +24,7 @@ import {
   Eye,
 } from 'lucide-react';
 import { desktopFileService } from '../services/desktopFileService';
+import { resolveCanonicalKey } from '../utils/mappingDictionary';
 
 export interface CollisionItem {
   id: string;
@@ -101,6 +102,88 @@ export const CatalogManagementStudio: React.FC<CatalogManagementStudioProps> = (
     setSelectedIds(next);
   };
 
+  const processWorkbookData = (data: Uint8Array, fileName: string) => {
+    try {
+      const workbook = XLSX.read(data, { type: 'array' });
+      const sheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[sheetName];
+      const json = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
+
+      if (json.length === 0) {
+        setActionFeedback('Le fichier sélectionné est vide.');
+        return;
+      }
+
+      const headers = (json[0] || []).map((h: any) => String(h || '').trim()).filter(Boolean);
+      const rows = json.slice(1).filter((r) => r.some((cell) => cell !== undefined && cell !== ''));
+
+      setParsedHeaders(headers);
+      setParsedRows(rows);
+
+      // Auto-match headers via persistent dictionary first, followed by retail heuristics
+      const autoMap: Record<string, string> = {};
+      headers.forEach((h) => {
+        const canonical = resolveCanonicalKey(h);
+        if (canonical && !autoMap[canonical]) {
+          autoMap[canonical] = h;
+          return;
+        }
+
+        const lower = h.toLowerCase();
+        if (
+          (lower.includes('ean') || lower.includes('gencod') || lower.includes('barcode') || lower.includes('scan')) &&
+          !autoMap['PRODUCT_SCAN']
+        ) {
+          autoMap['PRODUCT_SCAN'] = h;
+        } else if (
+          (lower.includes('designation') || lower.includes('libelle') || lower.includes('nom') || lower.includes('item')) &&
+          !autoMap['ITEMNAME']
+        ) {
+          autoMap['ITEMNAME'] = h;
+        } else if (lower.includes('prix') || lower.includes('price') || lower.includes('pv')) {
+          if (lower.includes('promo') && !autoMap['PROMOPRICE']) autoMap['PROMOPRICE'] = h;
+          else if (!autoMap['SELLING_PRICE']) autoMap['SELLING_PRICE'] = h;
+        } else if (
+          (lower.includes('sku') || lower.includes('ref') || lower.includes('art') || lower.includes('partno')) &&
+          !autoMap['PARTNO']
+        ) {
+          autoMap['PARTNO'] = h;
+        } else if (
+          (lower.includes('rayon') || lower.includes('dept') || lower.includes('departement')) &&
+          !autoMap['DEPT_NAME']
+        ) {
+          autoMap['DEPT_NAME'] = h;
+        } else if (
+          (lower.includes('categ') || lower.includes('famille')) &&
+          !autoMap['CATEGORY_NAME']
+        ) {
+          autoMap['CATEGORY_NAME'] = h;
+        }
+      });
+
+      setFieldMappings(autoMap);
+      setWizardStep(2);
+    } catch (err: any) {
+      setActionFeedback(`Erreur lors de la lecture du fichier : ${err.message || 'Format non supporté'}`);
+    }
+  };
+
+  const handlePickNativeFile = async () => {
+    try {
+      const res = await desktopFileService.openBinary([
+        { name: 'Feuille de calcul', extensions: ['xlsx', 'xls', 'csv'] },
+      ]);
+      if (res) {
+        setImportFile({ name: res.name } as any);
+        processWorkbookData(res.data, res.name);
+        return;
+      }
+    } catch (err) {
+      console.warn('Native open failed, falling back to input:', err);
+    }
+    fileInputRef.current?.click();
+  };
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -108,49 +191,8 @@ export const CatalogManagementStudio: React.FC<CatalogManagementStudioProps> = (
     setImportFile(file);
     const reader = new FileReader();
     reader.onload = (event) => {
-      try {
-        const data = new Uint8Array(event.target?.result as ArrayBuffer);
-        const workbook = XLSX.read(data, { type: 'array' });
-        const sheetName = workbook.SheetNames[0];
-        const worksheet = workbook.Sheets[sheetName];
-        const json = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
-
-        if (json.length === 0) {
-          setActionFeedback('Le fichier sélectionné est vide.');
-          return;
-        }
-
-        const headers = (json[0] || []).map((h: any) => String(h || '').trim()).filter(Boolean);
-        const rows = json.slice(1).filter((r) => r.some((cell) => cell !== undefined && cell !== ''));
-
-        setParsedHeaders(headers);
-        setParsedRows(rows);
-
-        // Auto-guess initial mappings
-        const autoMap: Record<string, string> = {};
-        headers.forEach((h) => {
-          const lower = h.toLowerCase();
-          if (lower.includes('ean') || lower.includes('gencod') || lower.includes('barcode') || lower.includes('scan')) {
-            autoMap['PRODUCT_SCAN'] = h;
-          } else if (lower.includes('designation') || lower.includes('libelle') || lower.includes('nom') || lower.includes('item')) {
-            autoMap['ITEMNAME'] = h;
-          } else if (lower.includes('prix') || lower.includes('price') || lower.includes('pv')) {
-            if (lower.includes('promo')) autoMap['PROMOPRICE'] = h;
-            else autoMap['SELLING_PRICE'] = h;
-          } else if (lower.includes('sku') || lower.includes('ref') || lower.includes('art') || lower.includes('partno')) {
-            autoMap['PARTNO'] = h;
-          } else if (lower.includes('rayon') || lower.includes('dept') || lower.includes('departement')) {
-            autoMap['DEPT_NAME'] = h;
-          } else if (lower.includes('categ') || lower.includes('famille')) {
-            autoMap['CATEGORY_NAME'] = h;
-          }
-        });
-
-        setFieldMappings(autoMap);
-        setWizardStep(2);
-      } catch (err: any) {
-        setActionFeedback(`Erreur lors de la lecture du fichier : ${err.message || 'Format non supporté'}`);
-      }
+      const data = new Uint8Array(event.target?.result as ArrayBuffer);
+      processWorkbookData(data, file.name);
     };
     reader.readAsArrayBuffer(file);
   };
@@ -560,7 +602,7 @@ export const CatalogManagementStudio: React.FC<CatalogManagementStudioProps> = (
               {wizardStep === 1 && (
                 <div className="space-y-4">
                   <div
-                    onClick={() => fileInputRef.current?.click()}
+                    onClick={handlePickNativeFile}
                     className="border-2 border-dashed border-slate-700 hover:border-blue-500 rounded-2xl p-10 flex flex-col items-center justify-center text-center cursor-pointer transition bg-slate-900/40"
                   >
                     <Upload className="w-10 h-10 text-slate-500 mb-3" />

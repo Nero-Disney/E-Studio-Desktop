@@ -506,3 +506,50 @@ pub fn prefs_set(state: State<'_, DbState>, key: String, value: String) -> Resul
 
     Ok(())
 }
+
+#[tauri::command]
+pub fn batch_import_record(
+    state: State<'_, DbState>,
+    id: String,
+    filename: String,
+    report_json: String,
+) -> Result<(), String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let now = Utc::now().to_rfc3339();
+    conn.execute(
+        "INSERT OR REPLACE INTO import_batches (id, filename, report_json, created_at) VALUES (?1, ?2, ?3, ?4)",
+        params![id, filename, report_json, now],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn batch_import_list(state: State<'_, DbState>) -> Result<Vec<Value>, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let mut stmt = conn
+        .prepare("SELECT id, filename, report_json, created_at FROM import_batches ORDER BY created_at DESC LIMIT 100")
+        .map_err(|e| e.to_string())?;
+
+    let rows = stmt
+        .query_map([], |row| {
+            let id: String = row.get(0)?;
+            let filename: String = row.get(1)?;
+            let report_json: String = row.get(2)?;
+            let created_at: String = row.get(3)?;
+            let mut report_val: Value = serde_json::from_str(&report_json).unwrap_or(Value::Null);
+            if let Some(obj) = report_val.as_object_mut() {
+                obj.insert("id".to_string(), Value::String(id));
+                obj.insert("filename".to_string(), Value::String(filename));
+                obj.insert("timestamp".to_string(), Value::String(created_at));
+            }
+            Ok(report_val)
+        })
+        .map_err(|e| e.to_string())?;
+
+    let mut list = Vec::new();
+    for r in rows {
+        list.push(r.map_err(|e| e.to_string())?);
+    }
+    Ok(list)
+}

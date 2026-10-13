@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { LabelTemplate, TemplateItem, ProductRecord } from '../types';
 import { LabelRenderer } from './LabelRenderer';
 import { PropertyInspector } from './PropertyInspector';
@@ -19,6 +19,7 @@ import {
 } from '../models/TemplateObjectModel';
 import { sanitizeNonPriceElement } from '../utils/pricingEngine';
 import { desktopFileService } from '../services/desktopFileService';
+import { PreFlightEngine } from '../utils/preFlightEngine';
 import {
   SmartGuideLine,
   BoxBounds,
@@ -48,6 +49,7 @@ import {
   ChevronRight,
   Printer,
   CheckCircle,
+  FileCheck,
   Layers,
   MousePointer,
   RotateCcw,
@@ -144,6 +146,12 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({
   const [showCalibrationModal, setShowCalibrationModal] = useState(false);
   const [isFindReplaceOpen, setIsFindReplaceOpen] = useState(false);
   const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
+  const [isPreFlightModalOpen, setIsPreFlightModalOpen] = useState(false);
+
+  // Live computed pre-flight quality verification report
+  const preFlightReport = useMemo(() => {
+    return PreFlightEngine.analyzeTemplate(template);
+  }, [template]);
 
   // Mouse live position (mm) for bottom status bar
   const [mousePosMm, setMousePosMm] = useState<{ x_mm: number; y_mm: number } | null>(null);
@@ -1688,9 +1696,25 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({
           <div className="h-5 w-px bg-slate-200" />
           <div>
             <h1 className="text-sm font-bold text-slate-900 leading-none truncate max-w-md">{template.name}</h1>
-            <p className="text-[11px] text-slate-500 font-mono mt-0.5">
-              {template.width_mm} × {template.height_mm} mm • {template.items.length} éléments
-            </p>
+            <div className="flex items-center gap-2 mt-0.5">
+              <span className="text-[11px] text-slate-500 font-mono">
+                {template.width_mm} × {template.height_mm} mm • {template.items.length} éléments
+              </span>
+              <button
+                type="button"
+                onClick={() => setIsPreFlightModalOpen(true)}
+                className={`text-[10px] font-semibold flex items-center gap-1 px-1.5 py-0.5 rounded transition ${
+                  preFlightReport.status === 'ready'
+                    ? 'text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200'
+                    : preFlightReport.status === 'warning'
+                    ? 'text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200'
+                    : 'text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200'
+                }`}
+                title="Cliquer pour afficher l'analyse pré-vol de conformité"
+              >
+                <span>● {preFlightReport.status === 'ready' ? 'Prêt' : preFlightReport.status === 'warning' ? `À vérifier (${preFlightReport.warningsCount})` : `Non conforme (${preFlightReport.errorsCount})`}</span>
+              </button>
+            </div>
           </div>
         </div>
 
@@ -2910,6 +2934,133 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({
         isOpen={isShortcutsOpen}
         onClose={() => setIsShortcutsOpen(false)}
       />
+
+      {/* Pre-Flight Quality & Regulatory Inspection Modal */}
+      {isPreFlightModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl max-w-lg w-full flex flex-col max-h-[80vh] overflow-hidden text-slate-100 font-sans">
+            <div className="px-5 py-4 border-b border-slate-800 flex items-center justify-between bg-slate-950">
+              <div className="flex items-center gap-2.5">
+                <div
+                  className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+                    preFlightReport.status === 'ready'
+                      ? 'bg-emerald-950 text-emerald-400 border border-emerald-800'
+                      : preFlightReport.status === 'warning'
+                      ? 'bg-amber-950 text-amber-400 border border-amber-800'
+                      : 'bg-rose-950 text-rose-400 border border-rose-800'
+                  }`}
+                >
+                  <FileCheck className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white">Contrôle Pré-Vol Qualité</h3>
+                  <p className="text-[11px] text-slate-400">Vérification géométrique et réglementaire en temps réel</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsPreFlightModalOpen(false)}
+                className="p-1 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg text-sm"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-5 overflow-y-auto space-y-4 text-xs">
+              <div className="grid grid-cols-3 gap-2">
+                <div className="bg-slate-950 border border-slate-800 p-3 rounded-xl text-center">
+                  <span className="text-[10px] text-slate-500 uppercase font-mono block">Statut</span>
+                  <span
+                    className={`font-bold ${
+                      preFlightReport.status === 'ready'
+                        ? 'text-emerald-400'
+                        : preFlightReport.status === 'warning'
+                        ? 'text-amber-400'
+                        : 'text-rose-400'
+                    }`}
+                  >
+                    {preFlightReport.status === 'ready'
+                      ? 'Conforme'
+                      : preFlightReport.status === 'warning'
+                      ? 'Avertissement'
+                      : 'Non conforme'}
+                  </span>
+                </div>
+                <div className="bg-slate-950 border border-slate-800 p-3 rounded-xl text-center">
+                  <span className="text-[10px] text-slate-500 uppercase font-mono block">Erreurs</span>
+                  <span className="font-bold text-rose-400">{preFlightReport.errorsCount}</span>
+                </div>
+                <div className="bg-slate-950 border border-slate-800 p-3 rounded-xl text-center">
+                  <span className="text-[10px] text-slate-500 uppercase font-mono block">Alertes</span>
+                  <span className="font-bold text-amber-400">{preFlightReport.warningsCount}</span>
+                </div>
+              </div>
+
+              {preFlightReport.issues.length === 0 ? (
+                <div className="p-6 text-center text-slate-400 bg-slate-950/60 border border-slate-800 rounded-xl">
+                  <p className="text-emerald-400 font-semibold mb-1">Aucune anomalie détectée</p>
+                  <p className="text-[11px] text-slate-500">
+                    Toutes les marges, liaisons de données et contraintes d'impression sont respectées.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <span className="text-[11px] font-bold text-slate-400 block uppercase font-mono">
+                    Points de contrôle analysés
+                  </span>
+                  {preFlightReport.issues.map((issue) => (
+                    <div
+                      key={issue.id}
+                      className="bg-slate-950 border border-slate-800 p-3 rounded-xl flex items-start justify-between gap-3"
+                    >
+                      <div className="space-y-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`text-[10px] font-bold px-1.5 py-0.5 rounded uppercase font-mono ${
+                              issue.severity === 'error'
+                                ? 'bg-rose-950 text-rose-400 border border-rose-800'
+                                : issue.severity === 'warning'
+                                ? 'bg-amber-950 text-amber-400 border border-amber-800'
+                                : 'bg-blue-950 text-blue-400 border border-blue-800'
+                            }`}
+                          >
+                            {issue.severity}
+                          </span>
+                          <span className="text-slate-500 text-[10px] font-mono capitalize">
+                            {issue.category}
+                          </span>
+                        </div>
+                        <p className="text-slate-300 text-xs leading-relaxed">{issue.message}</p>
+                      </div>
+
+                      {issue.itemId && (
+                        <button
+                          onClick={() => {
+                            setSelectedItemIds([issue.itemId!]);
+                            setIsPreFlightModalOpen(false);
+                          }}
+                          className="shrink-0 px-2.5 py-1 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/40 rounded-lg text-[11px] font-semibold transition"
+                          title="Sélectionner l'élément sur le canevas"
+                        >
+                          Localiser
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="px-5 py-3 border-t border-slate-800 bg-slate-950 flex justify-end">
+              <button
+                onClick={() => setIsPreFlightModalOpen(false)}
+                className="px-4 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-semibold"
+              >
+                Fermer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
