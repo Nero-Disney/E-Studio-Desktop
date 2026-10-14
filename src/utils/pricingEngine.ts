@@ -1,6 +1,15 @@
 import { ProductRecord, TextItemProperties, TemplateItem } from '../types';
 import { resolveCanonicalKey } from './mappingDictionary';
 
+export type PriceParseStatus = 'valid' | 'missing' | 'invalid';
+
+export interface PriceParseResult {
+  status: PriceParseStatus;
+  amount?: number;
+  raw?: any;
+  reason?: string;
+}
+
 /**
  * Advanced Retail & Pricing Engine for E-Studio
  * Handles automatic unit price per kg/L, discount percentage, 
@@ -58,44 +67,75 @@ export class PricingEngine {
     return undefined;
   }
 
+
+  /**
+   * Evaluates and parses a raw price into a structured result distinguishing:
+   * - 'valid': genuine parsed number (including explicit 0 if legitimate)
+   * - 'missing': undefined, null, or empty string
+   * - 'invalid': non-numeric string, corrupted text or NaN
+   */
+  static parsePrice(val: any): PriceParseResult {
+    if (val === undefined || val === null) {
+      return { status: 'missing', raw: val };
+    }
+    if (typeof val === 'number') {
+      if (isNaN(val)) return { status: 'invalid', raw: val, reason: 'Valeur NaN' };
+      return { status: 'valid', amount: val, raw: val };
+    }
+    const s = String(val).trim();
+    if (s === '') {
+      return { status: 'missing', raw: val };
+    }
+
+    // Strip currency symbols and letters (Unicode aware)
+    const cleaned = s.replace(/[€$£¥\p{L}]/gu, '').replace(/\s+/g, '');
+    if (!cleaned) {
+      return { status: 'invalid', raw: val, reason: `Contenu non numérique ("${s}")` };
+    }
+
+    let numStr = cleaned;
+    const hasComma = numStr.includes(',');
+    const hasDot = numStr.includes('.');
+    if (hasComma && hasDot) {
+      if (numStr.lastIndexOf(',') < numStr.lastIndexOf('.')) {
+        numStr = numStr.replace(/,/g, '');
+      } else {
+        numStr = numStr.replace(/\./g, '').replace(',', '.');
+      }
+    } else if (hasComma) {
+      numStr = numStr.replace(',', '.');
+    }
+
+    const num = parseFloat(numStr);
+    if (isNaN(num)) {
+      return { status: 'invalid', raw: val, reason: `Impossible de convertir "${s}" en nombre` };
+    }
+    return { status: 'valid', amount: num, raw: val };
+  }
+
   /**
    * Robust parser for raw prices in French/European or English notation:
    * "12,50 €", "12.50€", "12 500 FCFA", "1,250.50", "1.250,50", "29.99"
    */
   static parsePriceNumber(val: any): number {
-    if (typeof val === 'number') return isNaN(val) ? 0 : val;
-    if (val === undefined || val === null || val === '') return 0;
-    let str = String(val).trim();
-    // Strip currency symbols and letters (handling Unicode)
-    str = str.replace(/[€$£¥\p{L}]/gu, '').replace(/\s+/g, '');
-    if (!str) return 0;
-
-    const hasComma = str.includes(',');
-    const hasDot = str.includes('.');
-    if (hasComma && hasDot) {
-      if (str.lastIndexOf(',') < str.lastIndexOf('.')) {
-        // e.g. 1,250.50
-        str = str.replace(/,/g, '');
-      } else {
-        // e.g. 1.250,50
-        str = str.replace(/\./g, '').replace(',', '.');
-      }
-    } else if (hasComma) {
-      str = str.replace(',', '.');
-    }
-
-    const num = parseFloat(str);
-    return isNaN(num) ? 0 : num;
+    const res = PricingEngine.parsePrice(val);
+    return res.status === 'valid' ? (res.amount ?? 0) : 0;
   }
 
   /**
    * Helper: Resolves promo price from record with fallback matching
    */
-  static getPromoPrice(record: ProductRecord | null | undefined): number | undefined {
-    if (!record) return undefined;
+  static resolvePromoPrice(record: ProductRecord | null | undefined): PriceParseResult {
+    if (!record) return { status: 'missing' };
 
-    if (typeof record.PROMOPRICE === 'number' && !isNaN(record.PROMOPRICE) && record.PROMOPRICE > 0) {
-      return record.PROMOPRICE;
+    if (record.PROMOPRICE !== undefined && record.PROMOPRICE !== null && (record.PROMOPRICE as any) !== '') {
+      const res = PricingEngine.parsePrice(record.PROMOPRICE);
+      if (res.status === 'valid') {
+        if ((res.amount ?? 0) > 0) return res;
+        // PROMOPRICE = 0 means no active promotional discount
+        return { status: 'missing', raw: 0 };
+      }
+      return res;
     }
 
     // Search record keys for canonical PROMOPRICE
@@ -103,40 +143,51 @@ export class PricingEngine {
       const canonical = resolveCanonicalKey(k);
       if (canonical === 'PROMOPRICE') {
         const val = record[k];
-        if (typeof val === 'number' && !isNaN(val) && val > 0) return val;
-        if (typeof val === 'string') {
-          const num = PricingEngine.parsePriceNumber(val);
-          if (num > 0) return num;
+        if (val !== undefined && val !== null && val !== '') {
+          const res = PricingEngine.parsePrice(val);
+          if (res.status === 'valid') {
+            if ((res.amount ?? 0) > 0) return res;
+            return { status: 'missing', raw: val };
+          }
+          return res;
         }
       }
     }
 
-    return undefined;
+    return { status: 'missing' };
+  }
+
+  static getPromoPrice(record: ProductRecord | null | undefined): number | undefined {
+    const res = PricingEngine.resolvePromoPrice(record);
+    return res.status === 'valid' ? res.amount : undefined;
   }
 
   /**
    * Helper: Resolves standard selling price from record with fallback matching
    */
-  static getSellingPrice(record: ProductRecord | null | undefined): number {
-    if (!record) return 0;
+  static resolveSellingPrice(record: ProductRecord | null | undefined): PriceParseResult {
+    if (!record) return { status: 'missing' };
 
-    if (typeof record.SELLING_PRICE === 'number' && !isNaN(record.SELLING_PRICE)) {
-      return record.SELLING_PRICE;
+    if (record.SELLING_PRICE !== undefined && record.SELLING_PRICE !== null && (record.SELLING_PRICE as any) !== '') {
+      return PricingEngine.parsePrice(record.SELLING_PRICE);
     }
 
     for (const k of Object.keys(record)) {
       const canonical = resolveCanonicalKey(k);
       if (canonical === 'SELLING_PRICE') {
         const val = record[k];
-        if (typeof val === 'number' && !isNaN(val)) return val;
-        if (typeof val === 'string') {
-          const num = PricingEngine.parsePriceNumber(val);
-          if (!isNaN(num)) return num;
+        if (val !== undefined && val !== null && val !== '') {
+          return PricingEngine.parsePrice(val);
         }
       }
     }
 
-    return 0;
+    return { status: 'missing' };
+  }
+
+  static getSellingPrice(record: ProductRecord | null | undefined): number {
+    const res = PricingEngine.resolveSellingPrice(record);
+    return res.status === 'valid' ? (res.amount ?? 0) : 0;
   }
 
   /**
@@ -245,21 +296,23 @@ export class PricingEngine {
         }
       }
 
-      // 2. Automatic canonical barcode domain resolution
+      // 2. Automatic canonical barcode domain resolution (EAN / GTIN / PRODUCT_SCAN)
       const scan = PricingEngine.getProductFieldValue(record, 'PRODUCT_SCAN');
       if (scan !== undefined && scan !== null && String(scan).trim() !== '') {
         return String(scan).trim();
       }
 
-      // 3. Fallback to SKU / Reference / PARTNO
-      const partNo = PricingEngine.getProductFieldValue(record, 'PARTNO');
-      if (partNo !== undefined && partNo !== null && String(partNo).trim() !== '') {
-        return String(partNo).trim();
-      }
-
-      // 4. Fallback to product record ID
-      if (record.id) {
-        return String(record.id).trim();
+      // 3. Fallback to SKU / Reference / PARTNO - strictly restricted to Code 128 (alphanumeric symbology).
+      // EAN-13 strictly requires 12 or 13 digits and MUST NOT fall back to arbitrary alphanumeric SKU/id strings.
+      const barcodeType = (item as any).barcode_type || 'ean13';
+      if (barcodeType === 'code128') {
+        const partNo = PricingEngine.getProductFieldValue(record, 'PARTNO');
+        if (partNo !== undefined && partNo !== null && String(partNo).trim() !== '') {
+          return String(partNo).trim();
+        }
+        if (record.id) {
+          return String(record.id).trim();
+        }
       }
     }
 
@@ -267,12 +320,12 @@ export class PricingEngine {
       return (item as any).code || '';
     }
 
-    return (item as any).code || '';
+    return '';
   }
 
   /**
    * Dynamically resolves QR Code payload/URL from the ProductRecord,
-   * supporting template tags (e.g. {{PARTNO}}), explicit binding keys, or product scan fallbacks.
+   * supporting template tags (e.g. {{PARTNO}}), explicit binding keys, or static configured URL.
    */
   static resolveQrContent(
     item: { binding_key?: string; content?: string } | TemplateItem,
@@ -297,13 +350,9 @@ export class PricingEngine {
         });
       }
 
-      // 3. If content is default placeholder, try falling back to product link or barcode or partno
-      const defaultContents = ['https://example.com', 'https://monmagasin.fr', ''];
-      if (!rawContent || defaultContents.includes(rawContent)) {
-        const scan = PricingEngine.getProductFieldValue(record, 'PRODUCT_SCAN');
-        if (scan) return String(scan);
-        const partNo = PricingEngine.getProductFieldValue(record, 'PARTNO');
-        if (partNo) return String(partNo);
+      // 3. Keep configured URL / content without mutating URLs into barcodes
+      if (rawContent && typeof rawContent === 'string' && rawContent.trim() !== '') {
+        return rawContent.trim();
       }
     }
 
@@ -571,6 +620,10 @@ export class PricingEngine {
 export function isPriceRelatedElement(item: TemplateItem | undefined | null): boolean {
   if (!item) return false;
   if (item.type === 'price_block' || item.type === 'tier_price') return true;
+  const anyItem = item as any;
+  if (anyItem.is_price === true || anyItem.role === 'price') return true;
+  if (anyItem.unit_price_config || anyItem.secondary_currency_config) return true;
+  if (anyItem.calculation_mode === 'unit_price' || anyItem.calculation_mode === 'secondary_currency') return true;
   if (item.type === 'text') {
     if (!item.binding_key) return false;
     const bk = item.binding_key.trim().toUpperCase().replace(/[\s\.\-]+/g, '_');

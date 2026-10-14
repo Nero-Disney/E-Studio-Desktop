@@ -616,12 +616,15 @@ export const GenerationWorkspace: React.FC<GenerationWorkspaceProps> = ({
               }
             }
           } else if (item.type === 'price_block') {
-            let rawPrice: any = !prod ? ((item as any).fallback_price ?? 0) : undefined;
-            if (prod && item.binding_key) {
-              const val = PricingEngine.getProductFieldValue(prod, item.binding_key);
-              if (val !== undefined && val !== null && val !== '') {
-                rawPrice = val;
+            let rawPrice: any = undefined;
+            if (prod) {
+              if (item.binding_key) {
+                rawPrice = PricingEngine.getProductFieldValue(prod, item.binding_key);
+              } else {
+                rawPrice = PricingEngine.getSellingPrice(prod);
               }
+            } else {
+              rawPrice = (item as any).fallback_price ?? 0;
             }
             if (rawPrice === undefined || rawPrice === null || rawPrice === '') {
               return;

@@ -345,10 +345,14 @@ export const LabelRenderer: React.FC<LabelRendererProps> = ({
 
         // Resolve raw price: do not invent fallback_price when a real product record is passed
         let rawPrice: any = !record ? (item.fallback_price ?? 29.99) : undefined;
-        if (record && item.binding_key) {
-          const val = PricingEngine.getProductFieldValue(record, item.binding_key);
-          if (val !== undefined && val !== null && val !== '') {
-            rawPrice = val;
+        if (record) {
+          if (item.binding_key) {
+            const val = PricingEngine.getProductFieldValue(record, item.binding_key);
+            if (val !== undefined && val !== null && val !== '') {
+              rawPrice = val;
+            }
+          } else {
+            rawPrice = PricingEngine.getSellingPrice(record);
           }
         }
 

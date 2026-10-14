@@ -81,7 +81,15 @@
 - Purged demo barcode and QR constants (`3250390123456`, `3017620422003`, `1234567890128`) from `pricingEngine.ts`, `preFlightEngine.ts`, and `zplExporter.ts`. Added `{ sample: boolean }` flag so exports and preflight receive real product data.
 - Hardened PreFlightEngine with `target: 'screen' | 'pdf' | 'zpl'`: enforced strict price presence errors, boundary overflow detection, EAN-13 checksum validation, and ZPL target compatibility checks.
 - Enforced export blocking in `GenerationWorkspace.tsx`: PDF and ZPL exports strictly refuse execution if `preFlightReport.passed === false`. Added `price_block` rendering to PDF and ZPL outputs.
-- Attached `template_snapshot` and `printed_products` to persisted print jobs in SQLite and upgraded `PrintJobHistoryModal.tsx` re-spooling to generate real PDF and ZPL streams.
 - Verified with `npx tsc --noEmit` and `compile_applet`: 0 errors, 0 warnings.
+
+## Step 8 — Production Hardening & Code Audit Resolutions (P0 / P1)
+- **Unified Canonical Resolution Layer (`LabelResolutionEngine`)**: Standardized label element resolution across Screen, PDF, ZPL, and PPTX targets. Eliminated price, EAN, exchange rate, and URL fallbacks for real product data.
+- **Export Pre-Flight Strict Blocking**: Export in PDF and ZPL is hard-blocked if any item exceeds canvas boundaries, if mandatory retail prices are missing or invalid, or if an element type is unsupported by the target format.
+- **ZPL Security & Encoding Hardening (P0)**: Injected `^CI28` for native UTF-8 international support, added `^FH` hexadecimal field escaping for text, barcodes, and QR data to eliminate command injection (`^`, `~`, `_`), and sanitized `^FX` comments.
+- **Unified Price Parsing & Promo Precedence (P0)**: Unified `excelCleaner` and `PricingEngine` under `PricingEngine.parsePriceNumber()`. Resolved `PROMOPRICE = 0` so zero doesn't bypass promo evaluation, and normalized decimal separators dynamically by currency.
+- **Price Element Discriminator Fix**: Updated `isPriceRelatedElement` to recognize `role === 'price'`, `is_price === true`, `unit_price_config`, `secondary_currency_config`, and `calculation_mode` ('unit_price' / 'secondary_currency') so `sanitizeNonPriceElement` does not erase price-per-kg or secondary currency configurations.
+- **Full TypeScript Cleanliness**: Fixed all typing issues in `pptxExporter.ts`, `zplExporter.ts`, `labelResolutionEngine.ts`, and `preFlightEngine.ts`. `tsc --noEmit` and Vite production build pass with 0 errors and 0 warnings.
+
 
 

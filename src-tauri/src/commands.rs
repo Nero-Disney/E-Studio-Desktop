@@ -170,19 +170,25 @@ pub fn template_delete(state: State<'_, DbState>, id: String) -> Result<(), Stri
 }
 
 #[tauri::command]
-pub fn catalog_search(state: State<'_, DbState>, q: String) -> Result<Vec<Value>, String> {
+pub fn catalog_search(
+    state: State<'_, DbState>,
+    q: String,
+    limit: Option<usize>,
+) -> Result<Vec<Value>, String> {
     let conn = state.0.lock().map_err(|e| e.to_string())?;
-    let like_query = format!("%{}%", q.trim());
+    let trimmed = q.trim();
+    let max_rows = limit.unwrap_or(if trimmed.is_empty() { 50000 } else { 250 });
+    let like_query = format!("%{}%", trimmed);
     let mut stmt = conn
         .prepare(
             "SELECT document_json FROM products
-             WHERE scan LIKE ?1 OR partno LIKE ?1 OR document_json LIKE ?1
-             ORDER BY id ASC LIMIT 250",
+             WHERE (?1 = '%%' OR scan LIKE ?1 OR partno LIKE ?1 OR document_json LIKE ?1)
+             ORDER BY id ASC LIMIT ?2",
         )
         .map_err(|e| e.to_string())?;
 
     let rows = stmt
-        .query_map(params![like_query], |row| {
+        .query_map(params![like_query, max_rows], |row| {
             let json_str: String = row.get(0)?;
             Ok(json_str)
         })

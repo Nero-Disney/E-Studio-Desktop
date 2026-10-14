@@ -1,10 +1,11 @@
 import { LabelTemplate, TemplateItem, ProductRecord } from '../types';
 import { PricingEngine } from './pricingEngine';
 import { validateEAN13 } from './barcodeGenerator';
+import { LabelResolutionEngine } from './labelResolutionEngine';
 
 export type PreFlightSeverity = 'error' | 'warning' | 'info';
 export type PreFlightCategory = 'geometry' | 'data' | 'barcode' | 'typography' | 'compatibility';
-export type PreFlightTarget = 'screen' | 'pdf' | 'zpl';
+export type PreFlightTarget = 'screen' | 'pdf' | 'zpl' | 'pptx';
 
 export interface PreFlightIssue {
   id: string;
@@ -24,6 +25,11 @@ export interface PreFlightReport {
   infosCount: number;
   issues: PreFlightIssue[];
   passed: boolean;
+}
+
+export interface BatchPreFlightReport extends PreFlightReport {
+  totalProductsChecked: number;
+  defectiveProductsCount: number;
 }
 
 export class PreFlightEngine {
@@ -139,6 +145,17 @@ export class PreFlightEngine {
             severity: 'error',
             category: 'compatibility',
             message: `L'élément de type "${item.type}" n'est pas représentable en export PDF vectoriel.`,
+            itemId: item.id,
+          });
+        }
+      } else if (target === 'pptx') {
+        const pptxUnsupported = ['rich_text', 'curved_text', 'restricted_area'];
+        if (pptxUnsupported.includes(item.type)) {
+          issues.push({
+            id: `pptx_unsupported_${item.id}`,
+            severity: 'error',
+            category: 'compatibility',
+            message: `L'élément de type "${item.type}" n'est pas représentable en export PowerPoint (.pptx).`,
             itemId: item.id,
           });
         }
@@ -271,6 +288,91 @@ export class PreFlightEngine {
       infosCount,
       issues,
       passed: errorsCount === 0,
+    };
+  }
+
+  /**
+   * Exhaustively evaluates every single product in the batch against the template and target,
+   * guaranteeing that product #257 with an absent price or product #1200 with an invalid EAN
+   * is detected and blocks the export before any physical job is created.
+   */
+  static analyzeBatch(
+    template: LabelTemplate,
+    products: ProductRecord[],
+    target: PreFlightTarget = 'screen'
+  ): BatchPreFlightReport {
+    // 1. Base template structure analysis
+    const baseReport = PreFlightEngine.analyzeTemplate(template, products[0], target);
+    const issues = [...baseReport.issues];
+    let defectiveProductsCount = 0;
+
+    if (!products || products.length === 0) {
+      return {
+        ...baseReport,
+        totalProductsChecked: 0,
+        defectiveProductsCount: 0,
+      };
+    }
+
+    // 2. Iterate through every product in the batch using LabelResolutionEngine
+    const maxProductIssuesToReport = 25;
+    let productIssuesRecorded = 0;
+
+    for (let idx = 0; idx < products.length; idx++) {
+      const p = products[idx];
+      const resolved = LabelResolutionEngine.resolveLabel(template, p, target, { sample: false });
+      const productErrors = resolved.issues.filter((i) => i.severity === 'error');
+
+      if (productErrors.length > 0) {
+        defectiveProductsCount++;
+        if (productIssuesRecorded < maxProductIssuesToReport) {
+          for (const err of productErrors) {
+            const issueId = `${err.id}_p${idx}`;
+            if (!issues.some((i) => i.id === issueId)) {
+              issues.push({
+                id: issueId,
+                severity: err.severity,
+                category: err.category,
+                message: `[Ligne #${idx + 1} - ${p.ITEMNAME || p.PARTNO || p.PRODUCT_SCAN || p.id}] ${err.message}`,
+                itemId: err.itemId,
+                field: err.productIdentifier,
+              });
+              productIssuesRecorded++;
+            }
+          }
+        }
+      }
+    }
+
+    if (defectiveProductsCount > maxProductIssuesToReport) {
+      issues.push({
+        id: 'overflow_batch_errors',
+        severity: 'error',
+        category: 'data',
+        message: `+ ${defectiveProductsCount - maxProductIssuesToReport} autre(s) article(s) présentant des erreurs bloquantes dans le lot.`,
+      });
+    }
+
+    const errorsCount = issues.filter((i) => i.severity === 'error').length;
+    const warningsCount = issues.filter((i) => i.severity === 'warning').length;
+    const infosCount = issues.filter((i) => i.severity === 'info').length;
+
+    let status: ComputedTemplateStatus = 'ready';
+    if (errorsCount > 0) {
+      status = 'draft';
+    } else if (warningsCount > 0) {
+      status = 'warning';
+    }
+
+    return {
+      status,
+      errorsCount,
+      warningsCount,
+      infosCount,
+      issues,
+      passed: errorsCount === 0,
+      totalProductsChecked: products.length,
+      defectiveProductsCount,
     };
   }
 

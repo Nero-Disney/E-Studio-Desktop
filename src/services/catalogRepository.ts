@@ -151,12 +151,12 @@ class CatalogRepository {
     } else {
       const map = new Map<string, ProductRecord>();
       this.products.forEach((p) => {
-        const key = p.PARTNO || p.PRODUCT_SCAN || p.id;
+        const key = p.id || p.PARTNO || p.PRODUCT_SCAN;
         map.set(key, p);
       });
 
       incomingProducts.forEach((prod) => {
-        const key = prod.PARTNO || prod.PRODUCT_SCAN || prod.id;
+        const key = prod.id || prod.PARTNO || prod.PRODUCT_SCAN;
         const existing = map.get(key);
         if (existing) {
           if (!isAppendOnly) {
@@ -180,6 +180,24 @@ class CatalogRepository {
     };
   }
 
+  public async saveToMasterDatabaseAsync(
+    incomingProducts: ProductRecord[],
+    mode: 'merge_update' | 'replace' | 'keep_existing' | 'update_upsert' | 'overwrite' | 'append' = 'merge_update'
+  ): Promise<{ totalCount: number; updatedCount: number; addedCount: number }> {
+    const res = this.saveToMasterDatabase(incomingProducts, mode);
+    try {
+      if (mode === 'replace' || mode === 'overwrite') {
+        await api.catalogReplaceAll(incomingProducts);
+      } else {
+        await api.catalogUpsert(incomingProducts);
+      }
+    } catch (err) {
+      console.error('Failed to persist to SQLite catalog', err);
+      throw err;
+    }
+    return res;
+  }
+
   public commitImport(
     importedRecords: ProductRecord[],
     report: ImportReport,
@@ -192,12 +210,12 @@ class CatalogRepository {
     } else {
       const map = new Map<string, ProductRecord>();
       this.products.forEach((p) => {
-        const key = p.PARTNO || p.PRODUCT_SCAN || p.id;
+        const key = p.id || p.PARTNO || p.PRODUCT_SCAN;
         map.set(key, p);
       });
       const toUpsert: ProductRecord[] = [];
       importedRecords.forEach((imp) => {
-        const key = imp.PARTNO || imp.PRODUCT_SCAN || imp.id;
+        const key = imp.id || imp.PARTNO || imp.PRODUCT_SCAN;
         if (skipKeys && skipKeys.has(key)) {
           // Preserve existing record, skip updating
           return;

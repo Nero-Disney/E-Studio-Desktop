@@ -71,17 +71,19 @@ export const api = {
     inMemoryStore.templates.delete(id);
   },
 
-  async catalogSearch(q: string): Promise<ProductRecord[]> {
+  async catalogSearch(q: string, limit?: number): Promise<ProductRecord[]> {
     if (isTauriEnvironment()) {
-      return await invoke<ProductRecord[]>('catalog_search', { q });
+      return await invoke<ProductRecord[]>('catalog_search', { q, limit });
     }
     const lower = q.toLowerCase();
-    return Array.from(inMemoryStore.products.values()).filter((p) => {
+    const all = Array.from(inMemoryStore.products.values()).filter((p) => {
+      if (!lower) return true;
       const name = (p.ITEMNAME || '').toLowerCase();
       const scan = (p.PRODUCT_SCAN || p.scan || '').toLowerCase();
       const partno = (p.PARTNO || p.partno || '').toLowerCase();
       return name.includes(lower) || scan.includes(lower) || partno.includes(lower);
     });
+    return limit ? all.slice(0, limit) : all;
   },
 
   async catalogUpsert(rows: ProductRecord[]): Promise<UpsertResult> {
