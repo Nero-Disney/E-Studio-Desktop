@@ -68,3 +68,20 @@
 - Connected `PrintJobHistoryModal.tsx` for spool inspection, status updates (`ready`, `sent`, `failed`), and native file re-exports.
 - Verified TypeScript compilation (`npx tsc --noEmit`) and applet compilation with 0 errors and zero warnings.
 - Acceptance: Catalog pipeline, pre-flight verification engine, and print job history manager fully operational.
+
+## Step 7 — Safe Types Consolidation & Non-Breaking Deduplication
+- Purged dead types with 0 external readers from src/types.ts: `EcoRenderingConfig`, `DualPriceDisplayConfig`, `BatchSpoolConfig`, `BrandAwareConfig`, `ColorPaletteMode`, `DitheringMethod`, `RulerPositionMode`, `RulerSettings`, `UiPreferences`.
+- Removed unread optional fields on `LabelTemplate`: `blueprint`, `color_palette_mode`, `dithering_method`, `brand_aware`. Template JSON keys and flat structure remain strictly preserved without nesting.
+- Deduplicated `ElementPlacementStrategy`: removed duplicate union in `src/utils/dynamicPlacement.ts` and imported canonical definition from `src/types.ts`.
+- Consolidated price tiers: updated `src/utils/tierEngine.ts` to read canonical `price_tiers` first with fallback to `TIERS`; updated `src/utils/pricingEngine.ts` so `has_tiers` checks both arrays.
+- Updated `GenerationWorkspace.tsx` to read `p.price_tiers` first before falling back to `p.TIERS` in table rendering.
+- Added `NET_WEIGHT_KG` (number), `VOLUME_L` (number), `PROMO_START_DATE` (date), `PROMO_PERIOD` (text) to `DOMAIN_FIELDS` in `src/domainFields.ts`.
+- Added `LAST_SELLING_PRICE?: number` and `label?: string` to `ProductRecord` and `PriceTier` in `src/types.ts`.
+- Pricing engine fixes: replaced `sellingPrice > 500 ? 'FCFA' : '€'` with `item.currency_symbol ?? ''`; updated discount calculation to return `''` instead of hardcoded `'-20%'` when no discount applies; updated `splitPrice` to accept dynamic `decimals` (0 for FCFA/GNF/XOF/XAF, 2 otherwise) and use `item.decimal_separator`; enabled date prefix fallback by `date_type`; enabled promo period date boundary checks in `has_promo`.
+- Purged demo barcode and QR constants (`3250390123456`, `3017620422003`, `1234567890128`) from `pricingEngine.ts`, `preFlightEngine.ts`, and `zplExporter.ts`. Added `{ sample: boolean }` flag so exports and preflight receive real product data.
+- Hardened PreFlightEngine with `target: 'screen' | 'pdf' | 'zpl'`: enforced strict price presence errors, boundary overflow detection, EAN-13 checksum validation, and ZPL target compatibility checks.
+- Enforced export blocking in `GenerationWorkspace.tsx`: PDF and ZPL exports strictly refuse execution if `preFlightReport.passed === false`. Added `price_block` rendering to PDF and ZPL outputs.
+- Attached `template_snapshot` and `printed_products` to persisted print jobs in SQLite and upgraded `PrintJobHistoryModal.tsx` re-spooling to generate real PDF and ZPL streams.
+- Verified with `npx tsc --noEmit` and `compile_applet`: 0 errors, 0 warnings.
+
+

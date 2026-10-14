@@ -119,35 +119,75 @@ export class PricingEngine {
 
     if (!record) return true;
 
-    const { rule, field_key } = item.conditional_display;
+    const { rule, field_key, compare_value } = item.conditional_display;
 
     switch (rule) {
       case 'has_promo': {
         const promo = PricingEngine.getPromoPrice(record);
         const base = PricingEngine.getSellingPrice(record);
-        return promo !== undefined && promo > 0 && (base === 0 || promo < base);
+        const priceValid = promo !== undefined && promo > 0 && (base === 0 || promo < base);
+        if (!priceValid) return false;
+
+        const parseDate = (dStr: any): Date | null => {
+          if (!dStr) return null;
+          const s = String(dStr).trim();
+          if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
+            const parts = s.split('-');
+            return new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+          }
+          if (/^\d{2}\/\d{2}\/\d{4}/.test(s)) {
+            const parts = s.split('/');
+            return new Date(parseInt(parts[2], 10), parseInt(parts[1], 10) - 1, parseInt(parts[0], 10));
+          }
+          return null;
+        };
+
+        const startDateStr = PricingEngine.getProductFieldValue(record, 'PROMO_START_DATE');
+        const endDateStr = PricingEngine.getProductFieldValue(record, 'PROMO_END_DATE');
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        const startDate = parseDate(startDateStr);
+        const endDate = parseDate(endDateStr);
+
+        if (startDate && today < startDate) return false;
+        if (endDate && today > endDate) return false;
+
+        return true;
       }
 
       case 'has_barcode': {
-        const scan = PricingEngine.resolveBarcodeValue(item, record);
+        const scan = PricingEngine.resolveBarcodeValue(item, record, { sample: false });
         return Boolean(scan && String(scan).trim().length > 0);
       }
 
       case 'has_tiers':
-        return Boolean(record.TIERS && record.TIERS.length > 0);
+        return Boolean(
+          (record.price_tiers && record.price_tiers.length > 0) ||
+          (record.TIERS && record.TIERS.length > 0)
+        );
 
       case 'field_gt_zero': {
         const key = field_key || item.binding_key;
         if (!key) return true;
         const val = PricingEngine.getProductFieldValue(record, key);
         const num = typeof val === 'number' ? val : parseFloat(String(val || 0));
-        return !isNaN(num) && num > 0;
+        const threshold =
+          compare_value !== undefined && compare_value !== ''
+            ? typeof compare_value === 'number'
+              ? compare_value
+              : parseFloat(String(compare_value)) || 0
+            : 0;
+        return !isNaN(num) && num > threshold;
       }
 
       case 'field_not_empty': {
         const key = field_key || item.binding_key;
         if (!key) return true;
         const val = PricingEngine.getProductFieldValue(record, key);
+        if (compare_value !== undefined && compare_value !== '') {
+          return String(val ?? '').trim() === String(compare_value).trim();
+        }
         return val !== undefined && val !== null && String(val).trim() !== '';
       }
 
@@ -163,7 +203,8 @@ export class PricingEngine {
    */
   static resolveBarcodeValue(
     item: { binding_key?: string; code?: string; barcode_type?: string } | TemplateItem,
-    record?: ProductRecord | null
+    record?: ProductRecord | null,
+    options?: { sample?: boolean }
   ): string {
     if (record) {
       // 1. Explicit binding key defined on element
@@ -192,8 +233,11 @@ export class PricingEngine {
       }
     }
 
-    // Static fallback
-    return (item as any).code || '3250390123456';
+    if (options?.sample) {
+      return (item as any).code || '';
+    }
+
+    return (item as any).code || '';
   }
 
   /**
@@ -202,7 +246,8 @@ export class PricingEngine {
    */
   static resolveQrContent(
     item: { binding_key?: string; content?: string } | TemplateItem,
-    record?: ProductRecord | null
+    record?: ProductRecord | null,
+    options?: { sample?: boolean }
   ): string {
     if (record) {
       // 1. Explicit binding key
@@ -232,7 +277,11 @@ export class PricingEngine {
       }
     }
 
-    return (item as any).content || 'https://example.com';
+    if (options?.sample) {
+      return (item as any).content || 'https://example.com';
+    }
+
+    return (item as any).content || '';
   }
 
   /**
@@ -252,10 +301,16 @@ export class PricingEngine {
    */
   static splitPrice(
     val: number | string | undefined | null,
-    separator: '.' | ',' = ','
+    separator: string = ',',
+    decimals?: number
   ): { integerPart: string; decimalPart: string; hasDecimals: boolean } {
+    const numDecimals = decimals !== undefined ? decimals : 2;
     if (val === undefined || val === null || val === '') {
-      return { integerPart: '0', decimalPart: '00', hasDecimals: false };
+      return {
+        integerPart: '0',
+        decimalPart: numDecimals > 0 ? ''.padStart(numDecimals, '0') : '',
+        hasDecimals: false,
+      };
     }
 
     let numVal: number;
@@ -266,17 +321,24 @@ export class PricingEngine {
       numVal = isNaN(parsed) ? 0 : parsed;
     }
 
-    // Format with 2 decimals if has decimal part or if fixed
-    const formatted = numVal.toFixed(2);
+    if (numDecimals === 0) {
+      const rounded = Math.round(numVal);
+      return {
+        integerPart: rounded.toLocaleString('fr-FR'),
+        decimalPart: '',
+        hasDecimals: false,
+      };
+    }
+
+    const formatted = numVal.toFixed(numDecimals);
     const [intPart, decPart] = formatted.split('.');
-    
-    // Group integer with spaces
+
     const integerGrouped = parseInt(intPart, 10).toLocaleString('fr-FR');
-    const hasDecimals = decPart !== undefined && decPart !== '00';
+    const hasDecimals = decPart !== undefined && decPart !== ''.padStart(numDecimals, '0');
 
     return {
       integerPart: integerGrouped,
-      decimalPart: decPart || '00',
+      decimalPart: decPart || ''.padStart(numDecimals, '0'),
       hasDecimals,
     };
   }
@@ -326,14 +388,19 @@ export class PricingEngine {
       }
 
       if (quantity <= 0) quantity = 1.0;
+      const rawQty = quantity;
+      const qty = rawQty * (cfg.custom_multiplier && cfg.custom_multiplier > 0 ? cfg.custom_multiplier : 1);
 
-      const unitPrice = basePrice / quantity;
+      const unitPrice = basePrice / (qty > 0 ? qty : 1.0);
       const formattedUnitPrice = unitPrice >= 100 
         ? Math.round(unitPrice).toLocaleString('fr-FR')
         : unitPrice.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
       
-      const currency = item.currency_symbol || (sellingPrice > 500 ? 'FCFA' : '€');
-      return `${formattedUnitPrice} ${currency} / ${cfg.measure_unit}`;
+      const currency = item.currency_symbol ?? '';
+      const body = `${formattedUnitPrice} ${currency} / ${cfg.measure_unit}`;
+      return cfg.format_pattern
+        ? cfg.format_pattern.replace('{price}', formattedUnitPrice).replace('{unit}', cfg.measure_unit)
+        : body;
     }
 
     // 2. Discount Percentage (-25%)
@@ -345,7 +412,7 @@ export class PricingEngine {
         const pct = Math.round(((sellingPrice - promoPrice) / sellingPrice) * 100);
         return `-${pct}%`;
       }
-      return '-20%';
+      return '';
     }
 
     // 3. Secondary Currency Conversion (e.g. FCFA -> EUR)
@@ -365,8 +432,15 @@ export class PricingEngine {
     // 4. Dynamic Date (DLC / DLUO / Fabrication)
     if (item.calculation_mode === 'dynamic_date' && item.dynamic_date_config?.enabled) {
       const cfg = item.dynamic_date_config;
+      // date_type: 'today' | 'dlc' | 'dluo' | 'fab_date'
       const formattedDate = PricingEngine.formatDateOffset(cfg.offset_days || 0, cfg.format || 'DD/MM/YYYY');
-      const prefix = cfg.prefix_label ? `${cfg.prefix_label} ` : '';
+      let prefix = cfg.prefix_label ? `${cfg.prefix_label} ` : '';
+      if (!prefix) {
+        if (cfg.date_type === 'dlc') prefix = "À consommer jusqu'au : ";
+        else if (cfg.date_type === 'dluo') prefix = "À consommer de préférence avant le : ";
+        else if (cfg.date_type === 'fab_date') prefix = "Emballé le : ";
+        else prefix = '';
+      }
       return `${prefix}${formattedDate}`;
     }
 

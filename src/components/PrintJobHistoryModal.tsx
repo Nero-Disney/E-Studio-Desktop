@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { PrintJob, PrintJobStatus } from '../types';
+import { PrintJob, PrintJobStatus, ProductRecord } from '../types';
 import { api } from '../services/api';
 import { desktopFileService } from '../services/desktopFileService';
+import { ZplExporter } from '../utils/zplExporter';
+import jsPDF from 'jspdf';
 import {
   Printer,
   History,
@@ -75,10 +77,27 @@ export const PrintJobHistoryModal: React.FC<PrintJobHistoryModalProps> = ({
   const handleReExport = async (job: PrintJob) => {
     try {
       const filename = `reexport_${job.id}.${job.format}`;
+      let template = job.template_snapshot;
+      if (!template && job.template_id) {
+        template = (await api.templateGet(job.template_id)) || undefined;
+      }
+      let products = job.printed_products as ProductRecord[] | undefined;
+      if (!products && job.product_ids?.length > 0) {
+        const allProds = await api.catalogSearch('');
+        const idSet = new Set(job.product_ids);
+        products = allProds.filter((p) => idSet.has(p.id));
+      }
+
       if (job.format === 'zpl') {
+        let content = '';
+        if (template && products && products.length > 0) {
+          content = ZplExporter.generateBatchZpl(template, products);
+        } else {
+          content = `^XA\n^FX E-STUDIO RE-SPOOL JOB ${job.id}\n^FO50,50^A0N,28,24^FDRe-export Job ${job.id}^FS\n^XZ`;
+        }
         const path = await desktopFileService.saveText(
           filename,
-          `^XA\n^FO50,50^ADN,36,20^FDRe-spool Job ${job.id}^FS\n^XZ`,
+          content,
           [{ name: 'Fichier ZPL', extensions: ['zpl', 'txt'] }]
         );
         if (path) {
@@ -86,10 +105,25 @@ export const PrintJobHistoryModal: React.FC<PrintJobHistoryModalProps> = ({
           await handleUpdateStatus(job.id, 'ready');
         }
       } else {
-        const dummyBuffer = new Uint8Array([0x25, 0x50, 0x44, 0x46]); // %PDF
+        const doc = new jsPDF({ unit: 'mm' });
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(14);
+        doc.text(`E-Studio Re-spool Job : ${job.id}`, 15, 20);
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(10);
+        doc.text(`Template ID: ${job.template_id} (Rev ${job.template_revision})`, 15, 28);
+        doc.text(`Date de création initiale: ${job.created_at}`, 15, 34);
+        doc.text(`Articles inclus: ${job.product_ids?.length || 0}`, 15, 40);
+        if (products && products.length > 0) {
+          doc.text(`Articles ré-imprimés :`, 15, 48);
+          products.slice(0, 15).forEach((p, idx) => {
+            doc.text(`• ${p.ITEMNAME || p.id} — ${p.SELLING_PRICE ?? '—'} €`, 20, 56 + idx * 6);
+          });
+        }
+        const arrayBuffer = doc.output('arraybuffer');
         const path = await desktopFileService.saveBinary(
           filename,
-          dummyBuffer,
+          new Uint8Array(arrayBuffer),
           [{ name: 'Document PDF', extensions: ['pdf'] }]
         );
         if (path) {

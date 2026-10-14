@@ -198,8 +198,8 @@ export const GenerationWorkspace: React.FC<GenerationWorkspaceProps> = ({
 
   // Preflight diagnostics for rows
   const preFlightReport = useMemo(() => {
-    return PreFlightEngine.analyzeTemplate(template, effectivePrintItems[0]);
-  }, [template, effectivePrintItems]);
+    return PreFlightEngine.analyzeTemplate(template, effectivePrintItems[0], exportConfirmTarget || 'screen');
+  }, [template, effectivePrintItems, exportConfirmTarget]);
 
   const diagnostics = useMemo(() => {
     return products.map((record) => {
@@ -307,6 +307,11 @@ export const GenerationWorkspace: React.FC<GenerationWorkspaceProps> = ({
 
   // ZPL Direct Thermal Export
   const handleExportZpl = async () => {
+    const targetReport = PreFlightEngine.analyzeTemplate(template, effectivePrintItems[0], 'zpl');
+    if (!targetReport.passed) {
+      console.error("Export ZPL refusé : le gabarit contient des erreurs bloquantes.", targetReport.issues);
+      return;
+    }
     try {
       const zplContent = ZplExporter.generateBatchZpl(template, effectivePrintItems, {
         dpi: zplDpi,
@@ -329,6 +334,15 @@ export const GenerationWorkspace: React.FC<GenerationWorkspaceProps> = ({
           status: 'ready',
           error: null,
           created_at: new Date().toISOString(),
+          template_snapshot: template,
+          printed_products: effectivePrintItems.map((p) => ({
+            id: p.id,
+            ITEMNAME: p.ITEMNAME,
+            SELLING_PRICE: p.SELLING_PRICE,
+            PROMOPRICE: p.PROMOPRICE,
+            PRODUCT_SCAN: p.PRODUCT_SCAN,
+            PARTNO: p.PARTNO,
+          })),
         });
         AuditLogService.append({
           action: 'EXPORT_ZPL',
@@ -601,6 +615,51 @@ export const GenerationWorkspace: React.FC<GenerationWorkspaceProps> = ({
                 doc.rect(itemX + startCol * cellW, itemY + row * cellH, (matrixSize - startCol) * cellW, cellH, 'F');
               }
             }
+          } else if (item.type === 'price_block') {
+            let rawPrice: any = (item as any).fallback_price ?? 0;
+            if (prod && item.binding_key) {
+              const val = PricingEngine.getProductFieldValue(prod, item.binding_key);
+              if (val !== undefined && val !== null && val !== '') {
+                rawPrice = val;
+              }
+            }
+            const currencySym = item.currency_symbol || '€';
+            const decimals = /FCFA|CFA|GNF|XOF|XAF/i.test(currencySym) ? 0 : 2;
+            const separator = item.decimal_separator ?? ',';
+            const { integerPart, decimalPart } = PricingEngine.splitPrice(rawPrice, separator, decimals);
+
+            const intFontSizePt = item.integer_style?.font_size_pt || 24;
+            const intHex = (item.integer_style?.text_color || '#000000').replace('#', '');
+            const r = parseInt(intHex.substring(0, 2), 16) || 0;
+            const g = parseInt(intHex.substring(2, 4), 16) || 0;
+            const b = parseInt(intHex.substring(4, 6), 16) || 0;
+
+            doc.setTextColor(r, g, b);
+            doc.setFont('helvetica', 'bold');
+
+            const align = item.alignment || 'left';
+            const currPos = item.currency_position || 'after';
+
+            let priceStr = `${integerPart}${decimals > 0 ? `${separator}${decimalPart}` : ''}`;
+            if (currPos === 'before') {
+              priceStr = `${currencySym} ${priceStr}`;
+            } else {
+              priceStr = `${priceStr} ${currencySym}`;
+            }
+
+            doc.setFontSize(intFontSizePt);
+            let textX = itemX;
+            if (align === 'center') textX = itemX + item.w_mm / 2;
+            else if (align === 'right') textX = itemX + item.w_mm;
+
+            let textY = itemY + intFontSizePt * 0.35;
+            if (item.valign === 'middle') {
+              textY = itemY + item.h_mm / 2 + intFontSizePt * 0.12;
+            } else if (item.valign === 'bottom') {
+              textY = itemY + item.h_mm - 0.5;
+            }
+
+            doc.text(priceStr, textX, textY, { align: align as any });
           } else if (item.type === 'tier_price') {
             doc.setDrawColor(203, 213, 225);
             doc.setFillColor(248, 250, 252);
@@ -625,6 +684,11 @@ export const GenerationWorkspace: React.FC<GenerationWorkspaceProps> = ({
 
   // Generate and save Imposed PDF via native OS dialog
   const handleGeneratePdf = async () => {
+    const targetReport = PreFlightEngine.analyzeTemplate(template, effectivePrintItems[0], 'pdf');
+    if (!targetReport.passed) {
+      console.error("Export PDF refusé : le gabarit contient des erreurs bloquantes.", targetReport.issues);
+      return;
+    }
     const doc = buildPdfDocument();
     if (!doc) return;
     const arrayBuffer = doc.output('arraybuffer');
@@ -646,6 +710,15 @@ export const GenerationWorkspace: React.FC<GenerationWorkspaceProps> = ({
         status: 'ready',
         error: null,
         created_at: new Date().toISOString(),
+        template_snapshot: template,
+        printed_products: effectivePrintItems.map((p) => ({
+          id: p.id,
+          ITEMNAME: p.ITEMNAME,
+          SELLING_PRICE: p.SELLING_PRICE,
+          PROMOPRICE: p.PROMOPRICE,
+          PRODUCT_SCAN: p.PRODUCT_SCAN,
+          PARTNO: p.PARTNO,
+        })),
       });
       AuditLogService.append({
         action: 'EXPORT_PDF_IMPOSITION',
@@ -1764,7 +1837,11 @@ export const GenerationWorkspace: React.FC<GenerationWorkspaceProps> = ({
                     </td>
                     <td className="p-2.5 text-slate-600">{p.CATEGORY_NAME || '—'}</td>
                     <td className="p-2.5">
-                      {p.TIERS && p.TIERS.length > 0 ? (
+                      {p.price_tiers && p.price_tiers.length > 0 ? (
+                        <span className="text-[11px] text-sky-700 font-medium">
+                          {p.price_tiers.map((t) => `${t.min_qty}+ : ${t.unit_price}`).join(' | ')}
+                        </span>
+                      ) : p.TIERS && p.TIERS.length > 0 ? (
                         <span className="text-[11px] text-sky-700 font-medium">
                           {p.TIERS.map((t) => `${t.qty}+ : ${t.unit_price}`).join(' | ')}
                         </span>
@@ -2056,7 +2133,9 @@ export const GenerationWorkspace: React.FC<GenerationWorkspaceProps> = ({
               </button>
               <button
                 type="button"
+                disabled={!preFlightReport.passed}
                 onClick={() => {
+                  if (!preFlightReport.passed) return;
                   const target = exportConfirmTarget;
                   setExportConfirmTarget(null);
                   if (target === 'pdf') {
@@ -2065,10 +2144,15 @@ export const GenerationWorkspace: React.FC<GenerationWorkspaceProps> = ({
                     handleExportZpl();
                   }
                 }}
-                className="px-5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold flex items-center gap-2 shadow-xs transition"
+                className={`px-5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 shadow-xs transition ${
+                  preFlightReport.passed
+                    ? 'bg-blue-600 hover:bg-blue-700 text-white cursor-pointer'
+                    : 'bg-slate-800 text-slate-500 cursor-not-allowed opacity-60'
+                }`}
+                title={!preFlightReport.passed ? 'Export bloqué : corrigez les erreurs pré-vol' : 'Confirmer et enregistrer'}
               >
                 <Download className="w-3.5 h-3.5" />
-                <span>Confirmer et Enregistrer</span>
+                <span>{preFlightReport.passed ? 'Confirmer et Enregistrer' : 'Export Bloqué (Erreurs pré-vol)'}</span>
               </button>
             </div>
           </div>

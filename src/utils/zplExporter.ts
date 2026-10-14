@@ -80,9 +80,40 @@ export class ZplExporter {
           break;
         }
 
+        case 'price_block': {
+          let rawPrice: any = item.fallback_price ?? 0;
+          if (record && item.binding_key) {
+            const val = PricingEngine.getProductFieldValue(record, item.binding_key);
+            if (val !== undefined && val !== null && val !== '') {
+              rawPrice = val;
+            }
+          }
+          const currencySym = item.currency_symbol || '€';
+          const decimals = /FCFA|CFA|GNF|XOF|XAF/i.test(currencySym) ? 0 : 2;
+          const separator = item.decimal_separator ?? ',';
+          const { integerPart, decimalPart } = PricingEngine.splitPrice(rawPrice, separator, decimals);
+
+          let priceText = `${integerPart}${decimals > 0 ? `${separator}${decimalPart}` : ''}`;
+          if (item.currency_position === 'before') {
+            priceText = `${currencySym} ${priceText}`;
+          } else {
+            priceText = `${priceText} ${currencySym}`;
+          }
+
+          const fontHeightDots = Math.max(16, Math.round((item.integer_style?.font_size_pt || 24) * (dpi / 72) * 0.8));
+          const fontWidthDots = Math.round(fontHeightDots * 0.65);
+
+          lines.push(`^FO${x},${y}^A0N,${fontHeightDots},${fontWidthDots}^FD${priceText}^FS`);
+          break;
+        }
+
         case 'barcode': {
-          const rawCode = PricingEngine.resolveBarcodeValue(item, record);
-          const cleanCode = (rawCode || '1234567890128').replace(/\D/g, '');
+          const rawCode = PricingEngine.resolveBarcodeValue(item, record, { sample: false });
+          const cleanCode = (rawCode || '').replace(/\D/g, '');
+          if (!cleanCode) {
+            console.warn(`[ZPL] Empty barcode for item ${item.id} - skipped`);
+            break;
+          }
           const barcodeH = Math.max(20, h - (item.show_text ? 20 : 0));
 
           if (item.barcode_type === 'ean13') {
@@ -95,7 +126,8 @@ export class ZplExporter {
         }
 
         case 'qrcode': {
-          const qrData = PricingEngine.resolveQrContent(item, record);
+          const qrData = PricingEngine.resolveQrContent(item, record, { sample: false });
+          if (!qrData) break;
           const mag = Math.max(2, Math.min(10, Math.round(w / 35)));
           lines.push(`^FO${x},${y}^BQN,2,${mag}^FDLA,${qrData}^FS`);
           break;
@@ -116,6 +148,7 @@ export class ZplExporter {
         }
 
         default:
+          console.warn(`[ZPL] Non-representable element type "${item.type}" ignored on ZPL target (id: ${item.id})`);
           break;
       }
     }
