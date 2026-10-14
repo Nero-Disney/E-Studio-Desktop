@@ -121,13 +121,24 @@ export class PreFlightEngine {
 
       // Target compatibility checks
       if (target === 'zpl') {
-        const zplUnsupported = ['image', 'rich_text', 'curved_text', 'pictogram', 'restricted_area'];
+        const zplUnsupported = ['image', 'rich_text', 'curved_text', 'pictogram', 'tier_price', 'ellipse', 'restricted_area'];
         if (zplUnsupported.includes(item.type)) {
           issues.push({
             id: `zpl_unsupported_${item.id}`,
             severity: 'error',
             category: 'compatibility',
             message: `L'élément de type "${item.type}" n'est pas représentable en impression thermique ZPL.`,
+            itemId: item.id,
+          });
+        }
+      } else if (target === 'pdf') {
+        const pdfUnsupported = ['rich_text', 'curved_text', 'image', 'restricted_area'];
+        if (pdfUnsupported.includes(item.type)) {
+          issues.push({
+            id: `pdf_unsupported_${item.id}`,
+            severity: 'error',
+            category: 'compatibility',
+            message: `L'élément de type "${item.type}" n'est pas représentable en export PDF vectoriel.`,
             itemId: item.id,
           });
         }
@@ -203,8 +214,20 @@ export class PreFlightEngine {
       });
     }
 
-    // Promo date checks on sample product
+    // Promo date checks and price presence on product record
     if (sampleProduct) {
+      if (hasPriceElement && target !== 'screen') {
+        const sp = PricingEngine.getSellingPrice(sampleProduct);
+        if (!sp || sp <= 0) {
+          issues.push({
+            id: 'product_missing_price',
+            severity: 'error',
+            category: 'data',
+            message: `L'article "${sampleProduct.ITEMNAME || sampleProduct.PARTNO || sampleProduct.id || 'sélectionné'}" n'a aucun prix de vente valide (SELLING_PRICE).`,
+          });
+        }
+      }
+
       const parseDate = (dStr: any): boolean => {
         if (!dStr) return true;
         const s = String(dStr).trim();

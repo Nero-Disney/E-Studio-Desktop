@@ -343,13 +343,18 @@ export const LabelRenderer: React.FC<LabelRendererProps> = ({
             ? 'justify-end text-right'
             : 'justify-start text-left';
 
-        // Resolve raw price
-        let rawPrice: any = item.fallback_price ?? 29.99;
+        // Resolve raw price: do not invent fallback_price when a real product record is passed
+        let rawPrice: any = !record ? (item.fallback_price ?? 29.99) : undefined;
         if (record && item.binding_key) {
           const val = PricingEngine.getProductFieldValue(record, item.binding_key);
           if (val !== undefined && val !== null && val !== '') {
             rawPrice = val;
           }
+        }
+
+        // If product record exists but has no price bound or price is empty, do not display fake 0,00
+        if (record && (rawPrice === undefined || rawPrice === null || rawPrice === '')) {
+          return null;
         }
 
         const currencySym = item.currency_symbol || '€';

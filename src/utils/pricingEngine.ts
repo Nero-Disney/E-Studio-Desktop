@@ -23,19 +23,19 @@ export class PricingEngine {
       return record.custom_name_override;
     }
 
-    // 1. Direct property match
-    if (record[bindingKey] !== undefined && record[bindingKey] !== null && record[bindingKey] !== '') {
-      return record[bindingKey];
-    }
-
-    // 2. Special handling for Promo Price
+    // 1. Special handling for Promo Price (must be evaluated before direct match so PROMOPRICE=0 doesn't bypass promo logic)
     if (bindingKey === 'PROMOPRICE') {
       return PricingEngine.getPromoPrice(record);
     }
 
-    // 3. Special handling for Selling Price
+    // 2. Special handling for Selling Price
     if (bindingKey === 'SELLING_PRICE') {
       return PricingEngine.getSellingPrice(record);
+    }
+
+    // 3. Direct property match
+    if (record[bindingKey] !== undefined && record[bindingKey] !== null && record[bindingKey] !== '') {
+      return record[bindingKey];
     }
 
     // 4. Normalized key search (e.g. "PRIX_PROMO", "PRIX PROMO", "prix_promo")
@@ -59,6 +59,36 @@ export class PricingEngine {
   }
 
   /**
+   * Robust parser for raw prices in French/European or English notation:
+   * "12,50 €", "12.50€", "12 500 FCFA", "1,250.50", "1.250,50", "29.99"
+   */
+  static parsePriceNumber(val: any): number {
+    if (typeof val === 'number') return isNaN(val) ? 0 : val;
+    if (val === undefined || val === null || val === '') return 0;
+    let str = String(val).trim();
+    // Strip currency symbols and letters (handling Unicode)
+    str = str.replace(/[€$£¥\p{L}]/gu, '').replace(/\s+/g, '');
+    if (!str) return 0;
+
+    const hasComma = str.includes(',');
+    const hasDot = str.includes('.');
+    if (hasComma && hasDot) {
+      if (str.lastIndexOf(',') < str.lastIndexOf('.')) {
+        // e.g. 1,250.50
+        str = str.replace(/,/g, '');
+      } else {
+        // e.g. 1.250,50
+        str = str.replace(/\./g, '').replace(',', '.');
+      }
+    } else if (hasComma) {
+      str = str.replace(',', '.');
+    }
+
+    const num = parseFloat(str);
+    return isNaN(num) ? 0 : num;
+  }
+
+  /**
    * Helper: Resolves promo price from record with fallback matching
    */
   static getPromoPrice(record: ProductRecord | null | undefined): number | undefined {
@@ -75,8 +105,8 @@ export class PricingEngine {
         const val = record[k];
         if (typeof val === 'number' && !isNaN(val) && val > 0) return val;
         if (typeof val === 'string') {
-          const num = parseFloat(val.replace(',', '.').replace(/[^0-9.-]+/g, ''));
-          if (!isNaN(num) && num > 0) return num;
+          const num = PricingEngine.parsePriceNumber(val);
+          if (num > 0) return num;
         }
       }
     }
@@ -100,7 +130,7 @@ export class PricingEngine {
         const val = record[k];
         if (typeof val === 'number' && !isNaN(val)) return val;
         if (typeof val === 'string') {
-          const num = parseFloat(val.replace(',', '.').replace(/[^0-9.-]+/g, ''));
+          const num = PricingEngine.parsePriceNumber(val);
           if (!isNaN(num)) return num;
         }
       }
@@ -313,13 +343,7 @@ export class PricingEngine {
       };
     }
 
-    let numVal: number;
-    if (typeof val === 'number') {
-      numVal = val;
-    } else {
-      const parsed = parseFloat(String(val).replace(',', '.').replace(/[^0-9.-]+/g, ''));
-      numVal = isNaN(parsed) ? 0 : parsed;
-    }
+    const numVal = PricingEngine.parsePriceNumber(val);
 
     if (numDecimals === 0) {
       const rounded = Math.round(numVal);

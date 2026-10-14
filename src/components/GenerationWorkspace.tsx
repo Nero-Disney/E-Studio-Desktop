@@ -616,12 +616,15 @@ export const GenerationWorkspace: React.FC<GenerationWorkspaceProps> = ({
               }
             }
           } else if (item.type === 'price_block') {
-            let rawPrice: any = (item as any).fallback_price ?? 0;
+            let rawPrice: any = !prod ? ((item as any).fallback_price ?? 0) : undefined;
             if (prod && item.binding_key) {
               const val = PricingEngine.getProductFieldValue(prod, item.binding_key);
               if (val !== undefined && val !== null && val !== '') {
                 rawPrice = val;
               }
+            }
+            if (rawPrice === undefined || rawPrice === null || rawPrice === '') {
+              return;
             }
             const currencySym = item.currency_symbol || '€';
             const decimals = /FCFA|CFA|GNF|XOF|XAF/i.test(currencySym) ? 0 : 2;
@@ -1720,10 +1723,14 @@ export const GenerationWorkspace: React.FC<GenerationWorkspaceProps> = ({
                         <>
                           <div className="flex items-center justify-between text-[8px] font-bold text-slate-700">
                             <span className="truncate">{prod ? prod.ITEMNAME : `Emplacement #${slotIdx + 1}`}</span>
-                            {prod && <span className="text-blue-600">{prod.SELLING_PRICE} F</span>}
+                            {prod && (
+                              <span className="text-blue-600">
+                                {prod.SELLING_PRICE} {(template.items?.find((i: any) => (i as any).currency_symbol) as any)?.currency_symbol || '€'}
+                              </span>
+                            )}
                           </div>
                           <div className="flex items-center justify-between text-[7px] text-slate-400 font-mono">
-                            <span>{prod?.PRODUCT_SCAN || '3250390123456'}</span>
+                            <span>{prod?.PRODUCT_SCAN || '—'}</span>
                             <span>{template.width_mm}x{template.height_mm}mm</span>
                           </div>
                         </>

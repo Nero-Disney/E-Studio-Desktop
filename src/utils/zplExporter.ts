@@ -81,12 +81,15 @@ export class ZplExporter {
         }
 
         case 'price_block': {
-          let rawPrice: any = item.fallback_price ?? 0;
+          let rawPrice: any = !record ? (item.fallback_price ?? 0) : undefined;
           if (record && item.binding_key) {
             const val = PricingEngine.getProductFieldValue(record, item.binding_key);
             if (val !== undefined && val !== null && val !== '') {
               rawPrice = val;
             }
+          }
+          if (rawPrice === undefined || rawPrice === null || rawPrice === '') {
+            break;
           }
           const currencySym = item.currency_symbol || '€';
           const decimals = /FCFA|CFA|GNF|XOF|XAF/i.test(currencySym) ? 0 : 2;

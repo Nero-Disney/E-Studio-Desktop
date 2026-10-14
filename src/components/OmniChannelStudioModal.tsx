@@ -553,7 +553,7 @@ export const OmniChannelStudioModal: React.FC<OmniChannelStudioModalProps> = ({
                     >
                       {/* Top Bar: SKU & Part No */}
                       <div className="flex justify-between items-center text-[10px] text-slate-600 border-b border-slate-200 pb-1">
-                        <span className="font-mono font-bold">{currentProduct.PRODUCT_SCAN || '3250390123456'}</span>
+                        <span className="font-mono font-bold">{currentProduct.PRODUCT_SCAN || '—'}</span>
                         <span className="font-bold text-slate-800">{currentProduct.PARTNO || 'REF-01'}</span>
                       </div>
 
