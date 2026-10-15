@@ -177,9 +177,10 @@ export const GenerationWorkspace: React.FC<GenerationWorkspaceProps> = ({
   const effectivePrintItems = useMemo<ProductRecord[]>(() => {
     if (printScope === 'selected_only') {
       if (!currentProduct) return [];
+      const forced = typeof currentProduct.forced_copies === 'number' && currentProduct.forced_copies > 0 ? currentProduct.forced_copies : undefined;
       const count = fillSheetWithSelected && imposition
         ? imposition.total_per_page
-        : Math.max(1, selectedCopies);
+        : Math.max(1, forced ?? selectedCopies);
       return Array.from({ length: count }, () => currentProduct);
     }
     if (printScope === 'checked_only') {
@@ -188,12 +189,17 @@ export const GenerationWorkspace: React.FC<GenerationWorkspaceProps> = ({
         return currentProduct ? [currentProduct] : [];
       }
       return checked.flatMap((p) => {
-        const qty = Math.max(1, itemCopies[p.id] || 1);
+        const forced = typeof p.forced_copies === 'number' && p.forced_copies > 0 ? p.forced_copies : undefined;
+        const qty = Math.max(1, forced ?? itemCopies[p.id] ?? 1);
         return Array.from({ length: qty }, () => p);
       });
     }
     // 'all'
-    return filteredProducts;
+    return filteredProducts.flatMap((p) => {
+      const forced = typeof p.forced_copies === 'number' && p.forced_copies > 0 ? p.forced_copies : undefined;
+      const qty = Math.max(1, forced ?? itemCopies[p.id] ?? 1);
+      return Array.from({ length: qty }, () => p);
+    });
   }, [printScope, currentProduct, fillSheetWithSelected, imposition, selectedCopies, products, checkedProductIds, itemCopies, filteredProducts]);
 
   // Preflight diagnostics for rows
@@ -400,8 +406,12 @@ export const GenerationWorkspace: React.FC<GenerationWorkspaceProps> = ({
         const col = slot % imposition.cols;
         const row = Math.floor(slot / imposition.cols);
 
-        const x = imposition.horizontal_offset_mm + col * (imposition.label_total_w_mm + gapX);
-        const y = imposition.vertical_offset_mm + row * (imposition.label_total_h_mm + gapY);
+        const nudge = impositionConfig.slot_nudges?.[slot] || { dx_mm: 0, dy_mm: 0 };
+        const nudgeX = typeof nudge.dx_mm === 'number' ? nudge.dx_mm : 0;
+        const nudgeY = typeof nudge.dy_mm === 'number' ? nudge.dy_mm : 0;
+
+        const x = imposition.horizontal_offset_mm + col * (imposition.label_total_w_mm + gapX) + nudgeX;
+        const y = imposition.vertical_offset_mm + row * (imposition.label_total_h_mm + gapY) + nudgeY;
 
         // Label background & border
         if (template.bg_color && template.bg_color !== 'transparent') {
@@ -411,6 +421,15 @@ export const GenerationWorkspace: React.FC<GenerationWorkspaceProps> = ({
           const b = parseInt(hex.substring(4, 6), 16) || 255;
           doc.setFillColor(r, g, b);
           doc.rect(x, y, template.width_mm, template.height_mm, 'F');
+        }
+
+        // Render background reference image if configured for output
+        if (template.background_image_path && template.background_image_in_output) {
+          try {
+            doc.addImage(template.background_image_path, 'JPEG', x, y, template.width_mm, template.height_mm);
+          } catch (err) {
+            console.warn("Échec d'insertion image de fond dans le PDF :", err);
+          }
         }
 
         doc.setDrawColor(220, 226, 235);
@@ -434,8 +453,13 @@ export const GenerationWorkspace: React.FC<GenerationWorkspaceProps> = ({
           const itemY = y + item.y_mm;
 
           if (item.type === 'text') {
-            const textVal = PricingEngine.resolveCalculatedText(item, prod);
+            let textVal = PricingEngine.resolveCalculatedText(item, prod);
             if (!textVal) return;
+
+            if (item.prefix_text) textVal = `${item.prefix_text} ${textVal}`;
+            if (item.suffix_text) textVal = `${textVal} ${item.suffix_text}`;
+            if (item.text_transform === 'uppercase') textVal = textVal.toUpperCase();
+            else if (item.text_transform === 'lowercase') textVal = textVal.toLowerCase();
 
             const hex = (item.text_color || '#000000').replace('#', '');
             const r = parseInt(hex.substring(0, 2), 16) || 0;

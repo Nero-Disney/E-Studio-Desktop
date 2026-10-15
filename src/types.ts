@@ -412,6 +412,40 @@ export interface LabelTemplate {
   items: TemplateItem[];
 }
 
+export const CURRENT_SCHEMA_VERSION = 1;
+
+export function migrateTemplateSchema(raw: any): LabelTemplate {
+  if (!raw || typeof raw !== 'object') {
+    throw new Error('Gabarit invalide : objet attendu.');
+  }
+  const now = new Date().toISOString();
+  const schema_version = typeof raw.schema_version === 'number' && raw.schema_version >= 1 ? raw.schema_version : CURRENT_SCHEMA_VERSION;
+  
+  return {
+    id: String(raw.id || `tpl_${Date.now()}`),
+    revision: typeof raw.revision === 'number' ? raw.revision : 1,
+    created_at: raw.created_at || now,
+    updated_at: raw.updated_at || now,
+    schema_version,
+    name: String(raw.name || 'Gabarit sans titre').trim(),
+    width_mm: typeof raw.width_mm === 'number' && raw.width_mm > 0 ? raw.width_mm : 100,
+    height_mm: typeof raw.height_mm === 'number' && raw.height_mm > 0 ? raw.height_mm : 50,
+    inner_margins_mm: raw.inner_margins_mm || { top: 0, right: 0, bottom: 0, left: 0 },
+    outer_margins_mm: raw.outer_margins_mm || { top: 0, right: 0, bottom: 0, left: 0 },
+    bg_color: raw.bg_color || '#FFFFFF',
+    bg_opacity: typeof raw.bg_opacity === 'number' ? raw.bg_opacity : 1.0,
+    background_image_path: raw.background_image_path ?? null,
+    background_image_opacity: raw.background_image_opacity ?? 0.5,
+    background_image_fit: raw.background_image_fit ?? 'contain',
+    background_image_visible: raw.background_image_visible ?? false,
+    background_image_locked: raw.background_image_locked ?? true,
+    background_image_in_output: raw.background_image_in_output ?? false,
+    calibration_image: raw.calibration_image ?? null,
+    default_imposition: raw.default_imposition,
+    items: Array.isArray(raw.items) ? raw.items : [],
+  };
+}
+
 export type PrintJobStatus = 'draft' | 'ready' | 'sent' | 'failed';
 
 export interface PrintJob {
@@ -419,7 +453,7 @@ export interface PrintJob {
   template_id: string;
   template_revision: number;
   product_ids: string[];
-  format: 'pdf' | 'zpl';
+  format: 'pdf' | 'zpl' | 'pptx' | 'esl';
   imposition_json: string;
   target: string;
   status: PrintJobStatus;
@@ -662,6 +696,8 @@ export interface ImpositionCalculation {
   vertical_offset_mm: number;
   label_total_w_mm: number;
   label_total_h_mm: number;
+  fits_on_page?: boolean;
+  overflow_warning?: string;
 }
 
 export interface TooltipSettings {

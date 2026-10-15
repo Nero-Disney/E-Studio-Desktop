@@ -15,12 +15,15 @@ export const isTauriEnvironment = (): boolean => {
 // In-memory fallback for browser preview mode (zero localStorage usage)
 const inMemoryStore = {
   templates: new Map<string, LabelTemplate>(),
+  templateRevisions: new Map<string, LabelTemplate>(),
   products: new Map<string, ProductRecord>(),
   jobs: new Map<string, PrintJob>(),
   audit: [] as AuditRecord[],
   kv: new Map<string, string>(),
   importBatches: [] as any[],
 };
+
+let auditIdCounter = 0;
 
 export const api = {
   async templateList(): Promise<TemplateSummary[]> {
@@ -46,6 +49,16 @@ export const api = {
     return t;
   },
 
+  async templateGetRevision(id: string, revision: number): Promise<LabelTemplate> {
+    if (isTauriEnvironment()) {
+      return await invoke<LabelTemplate>('template_get_revision', { id, revision });
+    }
+    const revKey = `${id}_v${revision}`;
+    const t = inMemoryStore.templateRevisions.get(revKey) || inMemoryStore.templates.get(id);
+    if (!t) throw new Error(`Template not found: ${id} (rev ${revision})`);
+    return t;
+  },
+
   async templateSave(doc: LabelTemplate): Promise<LabelTemplate> {
     if (isTauriEnvironment()) {
       return await invoke<LabelTemplate>('template_save', { doc });
@@ -60,6 +73,7 @@ export const api = {
       created_at: doc.created_at || now,
     };
     inMemoryStore.templates.set(doc.id, saved);
+    inMemoryStore.templateRevisions.set(`${saved.id}_v${saved.revision}`, saved);
     return saved;
   },
 
@@ -157,13 +171,15 @@ export const api = {
     if (isTauriEnvironment()) {
       await invoke('audit_append', {
         action,
+        entityId: entityId ?? null,
         entity_id: entityId ?? null,
         details,
       });
       return;
     }
+    auditIdCounter++;
     inMemoryStore.audit.unshift({
-      id: `aud_${Date.now()}`,
+      id: `aud_${Date.now()}_${auditIdCounter}`,
       at: new Date().toISOString(),
       os_user: 'system',
       action,
@@ -196,7 +212,12 @@ export const api = {
 
   async batchImportRecord(id: string, filename: string, reportJson: string): Promise<void> {
     if (isTauriEnvironment()) {
-      await invoke('batch_import_record', { id, filename, report_json: reportJson });
+      await invoke('batch_import_record', {
+        id,
+        filename,
+        reportJson,
+        report_json: reportJson,
+      });
       return;
     }
     try {

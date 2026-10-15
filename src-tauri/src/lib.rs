@@ -23,6 +23,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::template_list,
             commands::template_get,
+            commands::template_get_revision,
             commands::template_save,
             commands::template_delete,
             commands::catalog_search,

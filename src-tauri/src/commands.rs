@@ -2,10 +2,29 @@ use crate::db::{AuditRecord, TemplateSummary, UpsertResult};
 use chrono::Utc;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::Value;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 use tauri::State;
 
 pub struct DbState(pub Mutex<Connection>);
+
+static AUDIT_COUNTER: AtomicU64 = AtomicU64::new(1);
+
+/// Helper: Safely converts a JSON String or Number into a trimmed String
+fn value_to_str(val: Option<&Value>) -> Option<String> {
+    match val {
+        Some(Value::String(s)) => {
+            let trimmed = s.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
+        }
+        Some(Value::Number(n)) => Some(n.to_string()),
+        _ => None,
+    }
+}
 
 #[tauri::command]
 pub fn template_list(state: State<'_, DbState>) -> Result<Vec<TemplateSummary>, String> {
@@ -63,6 +82,41 @@ pub fn template_get(state: State<'_, DbState>, id: String) -> Result<Value, Stri
 }
 
 #[tauri::command]
+pub fn template_get_revision(
+    state: State<'_, DbState>,
+    id: String,
+    revision: i64,
+) -> Result<Value, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let mut stmt = conn
+        .prepare("SELECT document_json FROM template_revisions WHERE id = ?1 AND revision = ?2")
+        .map_err(|e| e.to_string())?;
+
+    let doc_str: Option<String> = stmt
+        .query_row(params![id, revision], |row| row.get(0))
+        .optional()
+        .map_err(|e| e.to_string())?;
+
+    match doc_str {
+        Some(s) => serde_json::from_str(&s).map_err(|e| e.to_string()),
+        None => {
+            // Fallback to active template if specific revision is not recorded
+            let mut stmt2 = conn
+                .prepare("SELECT document_json FROM templates WHERE id = ?1")
+                .map_err(|e| e.to_string())?;
+            let fallback: Option<String> = stmt2
+                .query_row(params![id], |row| row.get(0))
+                .optional()
+                .map_err(|e| e.to_string())?;
+            match fallback {
+                Some(s) => serde_json::from_str(&s).map_err(|e| e.to_string()),
+                None => Err(format!("Gabarit '{}' (révision {}) introuvable", id, revision)),
+            }
+        }
+    }
+}
+
+#[tauri::command]
 pub fn template_save(state: State<'_, DbState>, mut doc: Value) -> Result<Value, String> {
     let obj = doc
         .as_object_mut()
@@ -95,6 +149,23 @@ pub fn template_save(state: State<'_, DbState>, mut doc: Value) -> Result<Value,
     if !height_mm.is_finite() || height_mm <= 0.0 || height_mm > 2000.0 {
         return Err("La hauteur (height_mm) doit être comprise entre 0 et 2000 mm".to_string());
     }
+
+    let items = obj
+        .get("items")
+        .and_then(|v| v.as_array())
+        .ok_or_else(|| "Le gabarit doit contenir un tableau 'items'".to_string())?;
+
+    for it in items {
+        if !it.is_object() {
+            return Err("Chaque élément dans 'items' doit être un objet JSON valide".to_string());
+        }
+    }
+
+    let schema_version = obj
+        .get("schema_version")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(1);
+    obj.insert("schema_version".to_string(), Value::Number(schema_version.into()));
 
     let id = obj
         .get("id")
@@ -182,7 +253,12 @@ pub fn catalog_search(
     let mut stmt = conn
         .prepare(
             "SELECT document_json FROM products
-             WHERE (?1 = '%%' OR scan LIKE ?1 OR partno LIKE ?1 OR document_json LIKE ?1)
+             WHERE (?1 = '%%'
+                OR scan LIKE ?1
+                OR partno LIKE ?1
+                OR json_extract(document_json, '$.ITEMNAME') LIKE ?1
+                OR json_extract(document_json, '$.DESIGNATION') LIKE ?1
+                OR json_extract(document_json, '$.PRODUCT_NAME') LIKE ?1)
              ORDER BY id ASC LIMIT ?2",
         )
         .map_err(|e| e.to_string())?;
@@ -222,11 +298,9 @@ pub fn catalog_upsert(state: State<'_, DbState>, rows: Vec<Value>) -> Result<Ups
             }
         };
 
-        let id = obj
-            .get("id")
-            .and_then(|v| v.as_str())
-            .or_else(|| obj.get("PARTNO").and_then(|v| v.as_str()))
-            .or_else(|| obj.get("PRODUCT_SCAN").and_then(|v| v.as_str()));
+        let id = value_to_str(obj.get("id"))
+            .or_else(|| value_to_str(obj.get("PARTNO")))
+            .or_else(|| value_to_str(obj.get("PRODUCT_SCAN")));
 
         let id = match id {
             Some(s) if !s.trim().is_empty() => s.trim().to_string(),
@@ -236,18 +310,12 @@ pub fn catalog_upsert(state: State<'_, DbState>, rows: Vec<Value>) -> Result<Ups
             }
         };
 
-        let scan = obj
-            .get("PRODUCT_SCAN")
-            .or_else(|| obj.get("scan"))
-            .or_else(|| obj.get("barcode"))
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string());
+        let scan = value_to_str(obj.get("PRODUCT_SCAN"))
+            .or_else(|| value_to_str(obj.get("scan")))
+            .or_else(|| value_to_str(obj.get("barcode")));
 
-        let partno = obj
-            .get("PARTNO")
-            .or_else(|| obj.get("partno"))
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string());
+        let partno = value_to_str(obj.get("PARTNO"))
+            .or_else(|| value_to_str(obj.get("partno")));
 
         let doc_json = match serde_json::to_string(&row) {
             Ok(s) => s,
@@ -308,11 +376,9 @@ pub fn catalog_replace_all(state: State<'_, DbState>, rows: Vec<Value>) -> Resul
             None => continue,
         };
 
-        let id = obj
-            .get("id")
-            .and_then(|v| v.as_str())
-            .or_else(|| obj.get("PARTNO").and_then(|v| v.as_str()))
-            .or_else(|| obj.get("PRODUCT_SCAN").and_then(|v| v.as_str()))
+        let id = value_to_str(obj.get("id"))
+            .or_else(|| value_to_str(obj.get("PARTNO")))
+            .or_else(|| value_to_str(obj.get("PRODUCT_SCAN")))
             .unwrap_or_default()
             .trim()
             .to_string();
@@ -321,18 +387,12 @@ pub fn catalog_replace_all(state: State<'_, DbState>, rows: Vec<Value>) -> Resul
             continue;
         }
 
-        let scan = obj
-            .get("PRODUCT_SCAN")
-            .or_else(|| obj.get("scan"))
-            .or_else(|| obj.get("barcode"))
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string());
+        let scan = value_to_str(obj.get("PRODUCT_SCAN"))
+            .or_else(|| value_to_str(obj.get("scan")))
+            .or_else(|| value_to_str(obj.get("barcode")));
 
-        let partno = obj
-            .get("PARTNO")
-            .or_else(|| obj.get("partno"))
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string());
+        let partno = value_to_str(obj.get("PARTNO"))
+            .or_else(|| value_to_str(obj.get("partno")));
 
         if let Ok(doc_json) = serde_json::to_string(&row) {
             tx.execute(
@@ -446,7 +506,8 @@ pub fn audit_append(
     let conn = state.0.lock().map_err(|e| e.to_string())?;
     // OS user strictly determined from Rust OS runtime, never trusted from the WebView
     let os_user = whoami::fallible::username().unwrap_or_else(|_| "os_user".to_string());
-    let id = format!("aud_{}", Utc::now().timestamp_millis());
+    let counter = AUDIT_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let id = format!("aud_{}_{}", Utc::now().timestamp_millis(), counter);
     let now = Utc::now().to_rfc3339();
 
     conn.execute(
